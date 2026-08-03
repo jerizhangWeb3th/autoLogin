@@ -1,13 +1,16 @@
-"""闲鱼（Goofish）扫码登录 — 完整流程。
+"""闲鱼（Goofish）扫码登录 — 用户驱动的精确流程（实测验证版）。
 
-流程（用户验证过的 3 阶段）：
-  阶段1: 打开登录页 → 切二维码 tab → 截二维码（用户扫码）
-  阶段2: 检测扫码 → 等 10 秒 → 截人脸识别二维码（用户人脸识别）
-  阶段3: 检测登录 → 等 20 秒 → 刷新 → 截全页 → 保存 cookie
+流程（用户确认的交互模式）:
+  1. 打开登录页 → 截二维码 → 发给用户扫码
+  2. 用户扫码 → 用 cookie 检测登录态（unb+tracknick 出现即视为扫码成功）
+  3. 检测是否需要人脸验证 → 提取人脸二维码 → 发给用户识别
+  4. 等登录态完整（+sgcookie）→ 等 20 秒 → 打开主页截图确认 → 保存 cookie
 
-关键经验：
-  - 必须用 Xvfb 有头模式 + 完整 stealth 伪装（headless 会被风控拒绝）
-  - 扫码后闲鱼要求新设备人脸识别（identity_verify），需二次扫码
+关键经验（实测踩坑）:
+  - 用 cookie 判断扫码，不要用页面跳转（扫码确认后 cookie 立即建立，
+    但页面可能不自动跳转，仍停在 mini_login）
+  - 不点任何按钮：二维码提取后页面停留，用户扫码后 cookie 自动建立
+  - 扫码后闲鱼可能要求新设备人脸识别（identity_verify），需二次扫码
   - cookies.json 只保留 .goofish.com 域 cookie（混入 .taobao.com 同名 cookie 会登录失效）
 """
 
@@ -30,21 +33,62 @@ os.environ.setdefault("DISPLAY", ":99")
 import config
 import utils
 
-SCAN_KEYWORDS = ["确认登录", "扫描成功", "已扫描", "扫码成功"]
+QR_OUT = str(config.ASSETS_DIR / "goofish_qr_login.png")
 FACE_QR_OUT = str(config.ASSETS_DIR / "goofish_face_qr.png")
-FULL_OUT = str(config.ASSETS_DIR / "goofish_page.png")
+SHOT1 = str(config.ASSETS_DIR / "goofish_step1_login.png")
+SHOT2 = str(config.ASSETS_DIR / "goofish_step2_face.png")
+SHOT3 = str(config.ASSETS_DIR / "goofish_step3_home.png")
+
+# 状态机标记（供外部解析，触发给用户发图/判断）
+STATE_QR_READY = "STATE:QR_READY"        # 登录二维码已生成 → 发用户扫码
+STATE_FACE_QR = "STATE:FACE_QR_READY"    # 人脸二维码已生成 → 发用户识别
+STATE_SUCCESS = "STATE:LOGIN_SUCCESS"
+STATE_TIMEOUT = "STATE:TIMEOUT"
+
+
+def emit(tag: str, payload: str = "") -> None:
+    print(f"{tag} {payload}".strip(), flush=True)
+
+
+async def _snap(context) -> dict:
+    cookies = await context.cookies()
+    return {c["name"]: c["value"] for c in cookies if c.get("value")}
+
+
+async def _page_text(page) -> str:
+    try:
+        return await page.evaluate("document.body ? document.body.innerText : ''")
+    except Exception:
+        return ""
 
 
 async def extract_qr(page, out_path: str) -> bool:
-    """尝试从页面提取二维码元素截图。"""
+    """提取页面二维码（#qrcode-img / canvas / data:image / img）。"""
     qr_el = await page.query_selector("#qrcode-img") or await page.query_selector("canvas")
     if qr_el:
         await qr_el.screenshot(path=out_path)
         return True
+    b64 = await page.evaluate(
+        """() => {
+            const imgs = document.querySelectorAll('img');
+            for (const img of imgs) {
+                const src = img.src || '';
+                const r = img.getBoundingClientRect();
+                if (src.startsWith('data:image') && r.width > 50 && r.width < 300 && r.height > 50) return src;
+            }
+            return '';
+        }"""
+    )
+    if b64:
+        import base64
+        data = base64.b64decode(b64.split(",")[1])
+        with open(out_path, "wb") as f:
+            f.write(data)
+        return True
     imgs = await page.query_selector_all("img")
     for img in imgs:
         src = await img.get_attribute("src") or ""
-        if any(k in src.lower() for k in ["qr", "code", "login", "scan"]):
+        if any(k in src.lower() for k in ["qr", "code", "scan"]):
             try:
                 await img.screenshot(path=out_path)
                 return True
@@ -53,42 +97,12 @@ async def extract_qr(page, out_path: str) -> bool:
     return False
 
 
-async def _click_qr_tab(page) -> bool:
-    """切换到二维码登录 tab。"""
-    for sel in ["text=扫码", "text=二维码", "text=扫码登录", "text=二维码登录"]:
-        try:
-            el = await page.query_selector(sel)
-            if el:
-                await el.click()
-                utils.log(f"✅ 点击 {sel}")
-                await page.wait_for_timeout(3000)
-                return True
-        except Exception:
-            continue
-    try:
-        r = await page.evaluate(
-            """() => {
-                for (const el of document.querySelectorAll('span,div,a,li,button')) {
-                    if (el.textContent && el.textContent.includes('二维码') && el.offsetParent) {
-                        el.click(); return true;
-                    }
-                }
-                return false;
-            }"""
-        )
-        utils.log(f"  JS点击: {r}")
-        return bool(r)
-    except Exception as e:
-        utils.log(f"  JS点击失败: {e}")
-        return False
-
-
 async def run_login() -> None:
-    """闲鱼扫码登录主流程。"""
+    """闲鱼扫码登录主流程（用户驱动：二维码 → 扫码 → 人脸 → 完成）。"""
     from patchright.async_api import async_playwright
 
     config.GOOFISH_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
-    utils.log("🚀 启动有头模式 Chrome（闲鱼）...")
+    utils.log("🚀 启动真 Chrome（闲鱼）...")
 
     async with async_playwright() as pw:
         context = await pw.chromium.launch_persistent_context(
@@ -97,99 +111,95 @@ async def run_login() -> None:
         )
         page = context.pages[0] if context.pages else await context.new_page()
 
-        # ===== 阶段1: 登录页 + 初始二维码 =====
-        utils.log("打开登录页...")
+        # ===== 1. 打开登录页 → 截二维码 =====
         await page.goto(config.GOOFISH_LOGIN_URL, wait_until="load", timeout=30000)
-        await page.wait_for_timeout(8000)
-
-        await _click_qr_tab(page)
-        await page.reload(wait_until="load", timeout=30000)
         await page.wait_for_timeout(10000)
+        await page.screenshot(path=SHOT1, full_page=True)
+        utils.log(f"📸 登录页: {SHOT1}")
+        if await extract_qr(page, QR_OUT):
+            utils.log(f"✅ 登录二维码: {QR_OUT} ({os.path.getsize(QR_OUT)//1024}KB)")
+        emit(STATE_QR_READY, QR_OUT)  # → 发二维码给用户
 
-        qr_out = str(config.ASSETS_DIR / "goofish_qr_login.png")
-        if await extract_qr(page, qr_out):
-            utils.log(f"✅ 初始二维码: {qr_out} ({os.path.getsize(qr_out)//1024}KB)")
-        await page.screenshot(path=FULL_OUT)
-        print("QR_READY")  # 标记：二维码已就绪，可发给用户
-
-        # ===== 阶段2: 等待扫码 → 等10秒 → 截人脸二维码 =====
-        utils.log("🔍 等待扫码...")
-        scan_detected = False
-        start = time.time()
-        while time.time() - start < 300:
-            await page.wait_for_timeout(2000)
-            try:
-                body_text = await page.evaluate("document.body ? document.body.innerText : ''")
-            except Exception:
-                body_text = ""
-            fresh = await utils.snap_cookies_async(context)
-
-            hit = [k for k in SCAN_KEYWORDS if k in body_text]
-            if hit:
-                utils.log(f"🎯 检测到扫码: {hit}")
-                scan_detected = True
-                break
-            if "unb" in fresh and "tracknick" in fresh:
-                utils.log("🎯 检测到登录 cookie")
-                scan_detected = True
-                break
-
-        if not scan_detected:
-            print("NO_SCAN")
-            await context.close()
-            return
-
-        # 等 10 秒（页面跳转人脸识别）
-        utils.log("⏳ 等10秒（页面跳转人脸识别）...")
-        await page.wait_for_timeout(10000)
-
-        url_now = page.url
-        utils.log(f"当前 URL: {url_now}")
-        await page.screenshot(path=FULL_OUT, full_page=True)
-        utils.log(f"✅ 当前页面: {FULL_OUT} ({os.path.getsize(FULL_OUT)//1024}KB)")
-
-        got_face = await extract_qr(page, FACE_QR_OUT)
-        if not got_face:
-            await page.reload(wait_until="load", timeout=30000)
-            await page.wait_for_timeout(8000)
-            await page.screenshot(path=FULL_OUT, full_page=True)
-            got_face = await extract_qr(page, FACE_QR_OUT)
-        if got_face:
-            utils.log(f"✅ 人脸二维码: {FACE_QR_OUT} ({os.path.getsize(FACE_QR_OUT)//1024}KB)")
-        print("FACE_QR_READY")  # 标记：人脸识别二维码已就绪
-
-        # ===== 阶段3: 等待人脸识别完成 → 等20秒 → 刷新 → 截图 =====
-        utils.log("🔍 等待人脸识别完成...")
-        logged_in = False
+        # ===== 2. 等待扫码（用 cookie 判断，不依赖页面跳转） =====
+        utils.log("⏳ 等待扫码（最长300s）...")
+        scanned = False
         start = time.time()
         while time.time() - start < 300:
             await page.wait_for_timeout(3000)
-            fresh = await utils.snap_cookies_async(context)
-            if "unb" in fresh and "tracknick" in fresh and "sgcookie" in fresh:
-                utils.log(f"🎉 登录成功! unb={fresh['unb'][:4]}**** user={fresh['tracknick']}")
-                logged_in = True
+            fresh = await _snap(context)
+            if "unb" in fresh and "tracknick" in fresh:
+                utils.log(f"🎯 检测到扫码登录 cookie (unb={fresh['unb'][:4]}****)")
+                scanned = True
                 break
-            try:
-                body_text = await page.evaluate("document.body ? document.body.innerText : ''")
-                if "登录成功" in body_text or "欢迎" in body_text:
-                    utils.log("🎉 检测到登录成功文字")
-                    logged_in = True
-                    break
-            except Exception:
-                pass
+            elapsed = int(time.time() - start)
+            if elapsed % 30 == 0:
+                utils.log(f"  [{elapsed}s] 等待扫码中...")
 
-        utils.log("⏳ 等20秒...")
+        if not scanned:
+            utils.log("❌ 等待扫码超时")
+            emit(STATE_TIMEOUT, "scan")
+            await context.close()
+            return
+
+        # 等页面可能跳转（人脸验证）
+        await page.wait_for_timeout(8000)
+        url = page.url
+        text = await _page_text(page)
+        await page.screenshot(path=SHOT2, full_page=True)
+        utils.log(f"📸 扫码后: {SHOT2} | url={url[:80]}")
+
+        # ===== 3. 检测是否需要人脸验证 → 提取人脸二维码 =====
+        need_face = (
+            "identity" in url or "verify" in url
+            or any(k in text for k in ["人脸", "身份验证", "确认身份", "扫一扫"])
+        )
+        if need_face:
+            utils.log("⚠️ 需要人脸验证，提取人脸二维码...")
+            face_ok = await extract_qr(page, FACE_QR_OUT)
+            if not face_ok:
+                await page.reload(wait_until="load", timeout=30000)
+                await page.wait_for_timeout(8000)
+                await page.screenshot(path=SHOT2, full_page=True)
+                face_ok = await extract_qr(page, FACE_QR_OUT)
+            if face_ok:
+                utils.log(f"✅ 人脸二维码: {FACE_QR_OUT} ({os.path.getsize(FACE_QR_OUT)//1024}KB)")
+                emit(STATE_FACE_QR, FACE_QR_OUT)  # → 发人脸二维码给用户
+            else:
+                utils.log("⚠️ 未提取到人脸二维码，发送全页")
+                emit(STATE_FACE_QR, SHOT2)
+
+            # ===== 4. 等待人脸识别完成（登录态完整） =====
+            utils.log("⏳ 等待人脸识别完成（最长300s）...")
+            start = time.time()
+            while time.time() - start < 300:
+                await page.wait_for_timeout(3000)
+                fresh = await _snap(context)
+                if "unb" in fresh and "tracknick" in fresh and "sgcookie" in fresh:
+                    utils.log("🎉 人脸完成，登录态完整")
+                    break
+                text = await _page_text(page)
+                if "登录成功" in text or "欢迎" in text:
+                    utils.log("🎉 检测到登录成功")
+                    break
+                elapsed = int(time.time() - start)
+                if elapsed % 30 == 0:
+                    utils.log(f"  [{elapsed}s] 等待人脸完成...")
+
+        # ===== 5. 等 20 秒稳定 → 打开主页确认 → 保存 cookie =====
+        utils.log("⏳ 等 20 秒稳定会话...")
         await page.wait_for_timeout(20000)
 
-        utils.log("🔄 刷新页面...")
         try:
             await page.goto("https://www.goofish.com", wait_until="load", timeout=30000)
+            await page.wait_for_timeout(8000)
         except Exception:
-            await page.reload(wait_until="load", timeout=30000)
-        await page.wait_for_timeout(10000)
+            pass
+        await page.screenshot(path=SHOT3, full_page=True)
+        utils.log(f"📸 主页: {SHOT3} ({os.path.getsize(SHOT3)//1024}KB)")
 
-        await page.screenshot(path=FULL_OUT, full_page=True)
-        utils.log(f"✅ 最终截图: {FULL_OUT} ({os.path.getsize(FULL_OUT)//1024}KB)")
+        # 主页文字确认登录（显示用户名）
+        home_text = await _page_text(page)
+        utils.log(f"主页文字: {home_text[:80]}")
 
         # 抓取并保存 cookie（只保留 goofish 域）
         cookies = await context.cookies()
@@ -211,11 +221,11 @@ async def run_login() -> None:
             if not goofish_cookies:
                 goofish_cookies = fresh
             utils.write_goofish_cookies(goofish_cookies)
-            print("LOGIN_SUCCESS")
+            emit(STATE_SUCCESS)
         else:
-            print("NOT_LOGGED_IN")
+            utils.log("⚠️ 登录态未完全建立")
+            emit("STATE:NOT_LOGGED_IN")
 
-        print("SCREENSHOT_READY")
         await context.close()
 
 

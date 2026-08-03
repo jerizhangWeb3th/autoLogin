@@ -97,6 +97,8 @@ python verify_stealth.py
 2. **扫码后有二次人脸识别**：新设备登录会跳转 `identity_verify.htm`，需把人脸二维码发给用户再扫一次
 3. **cookie 必须只保留 `.goofish.com` 域**：混入 `.taobao.com` 域的同名 cookie（cookie2/_m_h5_tk/tfstk）会导致上传接口登录失效
 4. 上传接口有临时风控（`rgv587_flag: sm, action=wait`）：请求太频繁会触发，需等待冷却
+5. **判断扫码完成用 cookie，不要用页面跳转**：用户扫码确认后 cookie（unb/tracknick）立即建立，但页面可能不自动跳转仍停在登录页——轮询 cookie 最可靠
+6. **不要点击任何按钮**：二维码提取后页面停留，用户扫码后 cookie 自动建立；点击"立即登录"等按钮反而可能触发额外风控
 
 ### 小红书
 1. creator 登录页默认短信登录；**右上角 64x64 图标**切换到"APP扫一扫"
