@@ -65,11 +65,7 @@ async def run_login() -> None:
             "https://creator.xiaohongshu.com/login",
             wait_until="domcontentloaded", timeout=30000,
         )
-        await page.wait_for_timeout(3000)
-
-        # 运行时 stealth 伪装（patchright add_init_script 在系统 Chrome 不生效）
-        await utils.apply_stealth(page)
-        await page.wait_for_timeout(5000)
+        await page.wait_for_timeout(8000)
 
         # 点右上角扫码图标（64x64，位于登录框右上角）
         clicked = await page.evaluate(
@@ -99,8 +95,8 @@ async def run_login() -> None:
 
         qr_url = qr_data.get("url") or qr_data.get("qrCodeId", "")
         qr_id = qr_data.get("id") or qr_data.get("qrCodeId", "")
-        utils.log(f"🎯 qrCodeId: {qr_id}")
-        utils.log(f"🎯 二维码内容: {qr_url[:100]}")
+        utils.log(f"🎯 qrCodeId: {(qr_id or '')[:8]}...")
+        # 二维码内容 url 含敏感 qrCodeId，不打印完整值
 
         # 用 qrcode 库生成二维码（页面 canvas 抓不到，必须走接口）
         qr_out = str(config.ASSETS_DIR / "xiaohongshu_qr_login.png")

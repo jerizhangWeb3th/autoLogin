@@ -1,3 +1,4 @@
-patchright>=1.40
-qrcode>=7.4
-pillow>=10.0
+# 固定版本组合（经过验证），人工控制升级
+patchright==1.61.2
+qrcode==8.2
+pillow==12.3.0

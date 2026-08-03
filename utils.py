@@ -6,6 +6,7 @@
 import base64
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -15,8 +16,30 @@ import config
 
 
 def log(msg: str) -> None:
-    """带时间戳的日志输出。"""
+    """带时间戳的日志输出（自动脱敏敏感信息）。"""
+    msg = redact(msg)
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
+
+
+# ============================================================
+# 日志脱敏
+# ============================================================
+_SENSITIVE_PATTERNS = [
+    # qrCodeId / token / 会话 id（保留前 8 位便于对照）
+    (re.compile(r"(qrCodeId|qr_code_id|session_id|access[-_]?token)=([A-Za-z0-9_\-]{8,})"), r"\1=[REDACTED:\2...]"),
+    # 长 cookie 值
+    (re.compile(r"(sgcookie|csg|cookie2|web_session|galaxy_creator_session_id)=[^\s,;}\"]+"), r"\1=[REDACTED]"),
+    # 通用 token/ticket
+    (re.compile(r"(token|ticket|secret)=[A-Za-z0-9_\-]{8,}"), r"\1=[REDACTED]"),
+    # unb / 账号标识
+    (re.compile(r"unb=(\d{4})\d+"), r"unb=\1****"),
+]
+
+
+def redact(text: str) -> str:
+    for pattern, repl in _SENSITIVE_PATTERNS:
+        text = pattern.sub(repl, text)
+    return text
 
 
 # ============================================================
@@ -51,40 +74,6 @@ print("QR_GEN_OK")
 
 
 # ============================================================
-# 浏览器伪装加载
-# ============================================================
-def load_stealth_script() -> str:
-    """加载 stealth.py 里的完整伪装脚本（60+ 检测点）。
-
-    注意：patchright 的 add_init_script 依赖专用浏览器（route 注入），
-    在系统 Chrome 上不生效。正确用法是导航后 page.evaluate() 运行时执行。
-    """
-    try:
-        ns: dict = {}
-        exec(compile(config.STEALTH_PATH.read_text(), "stealth", "exec"), ns)
-        return ns.get("STEALTH_SCRIPT", "")
-    except Exception as e:
-        log(f"stealth 加载失败: {e}")
-        return ""
-
-
-async def apply_stealth(page) -> bool:
-    """在已加载的页面上运行时执行 stealth 伪装脚本。
-
-    必须在 page.goto() 之后调用（会 patch 当前页面的 navigator 等属性）。
-    """
-    script = load_stealth_script()
-    if not script:
-        return False
-    try:
-        await page.evaluate(script)
-        return True
-    except Exception as e:
-        log(f"stealth 应用失败: {e}")
-        return False
-
-
-# ============================================================
 # Cookie 处理
 # ============================================================
 async def snap_cookies_async(context) -> dict:
@@ -93,8 +82,15 @@ async def snap_cookies_async(context) -> dict:
     return {c["name"]: c["value"] for c in cookies if c.get("value")}
 
 
+def _chmod_0600(path: str) -> None:
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+
 def write_goofish_cookies(cookies: dict, path: str = None) -> None:
-    """写闲鱼 cookies.json（Chrome 扩展风格 JSON 数组）。
+    """写闲鱼 cookies.json（Chrome 扩展风格 JSON 数组），权限 0600。
 
     注意：闲鱼必须只保留 .goofish.com 域的 cookie，
     混入 .taobao.com 域的同名 cookie 会导致上传接口登录失效。
@@ -102,22 +98,29 @@ def write_goofish_cookies(cookies: dict, path: str = None) -> None:
     path = path or str(config.GOOFISH_COOKIE_FILE)
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     Path(path).write_text(
-        json.dumps([{"name": k, "value": v} for k, v in cookies.items()], ensure_ascii=False, indent=2)
+        json.dumps(
+            [{"name": k, "value": v} for k, v in cookies.items()],
+            ensure_ascii=False, indent=2,
+        )
     )
-    os.chmod(path, 0o600)
+    _chmod_0600(path)
     log(f"✅ cookie 已写入 {path} (共 {len(cookies)} 个)")
 
 
 async def save_storage_state(context, path: str = None) -> dict:
-    """保存小红书 storage_state（cookies + localStorage）。"""
+    """保存小红书 storage_state（cookies + localStorage），权限 0600。
+
+    只输出字段存在性，不输出 Cookie 值/账号标识。
+    """
     path = path or str(config.XHS_COOKIE_FILE)
     await context.storage_state(path=path)
+    _chmod_0600(path)
     saved = json.loads(Path(path).read_text())
     cks = saved.get("cookies", [])
     names = [c["name"] for c in cks]
     log(f"💾 已保存 {len(cks)} 个 cookie → {path}")
     log(
-        f"关键: a1={'✅' if 'a1' in names else '❌'} "
+        f"关键字段: a1={'✅' if 'a1' in names else '❌'} "
         f"galaxy={'✅' if 'galaxy_creator_session_id' in names else '❌'} "
         f"web_session={'✅' if 'web_session' in names else '❌'}"
     )
