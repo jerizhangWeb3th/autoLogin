@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 敏感文件（cookie / 凭据）
+*.json
+!requirements.txt
+*.key
+*.pem
+
+# 截图产物
+assets/*.png
+!assets/.gitkeep
+
+# 系统
+.DS_Store
