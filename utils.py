@@ -54,14 +54,34 @@ print("QR_GEN_OK")
 # 浏览器伪装加载
 # ============================================================
 def load_stealth_script() -> str:
-    """加载 stealth.py 里的完整伪装脚本（60+ 检测点）。"""
+    """加载 stealth.py 里的完整伪装脚本（60+ 检测点）。
+
+    注意：patchright 的 add_init_script 依赖专用浏览器（route 注入），
+    在系统 Chrome 上不生效。正确用法是导航后 page.evaluate() 运行时执行。
+    """
     try:
         ns: dict = {}
-        exec(compile(config.STEALTH_PATH.read_text() if hasattr(config, "STEALTH_PATH") else (Path(__file__).parent / "stealth.py").read_text(), "stealth", "exec"), ns)
+        exec(compile(config.STEALTH_PATH.read_text(), "stealth", "exec"), ns)
         return ns.get("STEALTH_SCRIPT", "")
     except Exception as e:
         log(f"stealth 加载失败: {e}")
         return ""
+
+
+async def apply_stealth(page) -> bool:
+    """在已加载的页面上运行时执行 stealth 伪装脚本。
+
+    必须在 page.goto() 之后调用（会 patch 当前页面的 navigator 等属性）。
+    """
+    script = load_stealth_script()
+    if not script:
+        return False
+    try:
+        await page.evaluate(script)
+        return True
+    except Exception as e:
+        log(f"stealth 应用失败: {e}")
+        return False
 
 
 # ============================================================

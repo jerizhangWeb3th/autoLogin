@@ -56,6 +56,17 @@ python main.py xiaohongshu
 
 ## 关键经验（踩坑记录）
 
+### 浏览器伪装（两层一致性，重要！）
+伪装分两层，**必须互相匹配**，否则风控一比对就露馅：
+1. **launch 参数层**（`config.py` 的 `launch_kwargs`）：UA / device_scale_factor / has_touch / color_scheme / locale / timezone / geolocation / sec-ch-ua 头
+2. **JS 注入层**（`stealth.py`，60+ 检测点）：navigator.platform / hardwareConcurrency / deviceMemory / webdriver 等
+
+**一致性要求**：stealth 声明 `devicePixelRatio=2`，launch 就必须 `device_scale_factor=2`；stealth 声明 `maxTouchPoints=0`，launch 就必须 `has_touch=False`；UA 是 Mac Chrome 126，sec-ch-ua 头就必须匹配 126。
+
+**踩坑**：patchright 的 `add_init_script` 依赖专用浏览器（route 注入机制），在系统 Chrome 上**静默失效**（不报错但不执行）。正确做法是**导航后 `page.evaluate()` 运行时执行 stealth 脚本**（见 `utils.apply_stealth()`）。
+
+用 `python verify_stealth.py` 自检两层一致性。
+
 ### 闲鱼
 1. **必须用有头模式**（Xvfb）：headless 扫码会被阿里风控拒绝，不发放完整登录态
 2. **扫码后有二次人脸识别**：新设备登录会跳转 `identity_verify.htm`，需把人脸二维码发给用户再扫一次

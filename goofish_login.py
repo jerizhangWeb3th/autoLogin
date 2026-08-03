@@ -100,7 +100,11 @@ async def run_login() -> None:
         # ===== 阶段1: 登录页 + 初始二维码 =====
         utils.log("打开登录页...")
         await page.goto(config.GOOFISH_LOGIN_URL, wait_until="load", timeout=30000)
-        await page.wait_for_timeout(8000)
+        await page.wait_for_timeout(3000)
+
+        # 运行时 stealth 伪装（patchright add_init_script 在系统 Chrome 不生效）
+        await utils.apply_stealth(page)
+        await page.wait_for_timeout(5000)
 
         await _click_qr_tab(page)
         await page.reload(wait_until="load", timeout=30000)

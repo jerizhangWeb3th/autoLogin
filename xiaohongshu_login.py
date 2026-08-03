@@ -65,7 +65,11 @@ async def run_login() -> None:
             "https://creator.xiaohongshu.com/login",
             wait_until="domcontentloaded", timeout=30000,
         )
-        await page.wait_for_timeout(8000)
+        await page.wait_for_timeout(3000)
+
+        # 运行时 stealth 伪装（patchright add_init_script 在系统 Chrome 不生效）
+        await utils.apply_stealth(page)
+        await page.wait_for_timeout(5000)
 
         # 点右上角扫码图标（64x64，位于登录框右上角）
         clicked = await page.evaluate(
