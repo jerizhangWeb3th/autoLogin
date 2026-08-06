@@ -15,6 +15,12 @@ import sys, os, asyncio
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+# patchright 安装路径（uv tool 安装位置）
+for p in [
+    str(Path.home() / ".local/share/uv/tools/patchright/lib/python3.11/site-packages"),
+]:
+    if p not in sys.path:
+        sys.path.insert(0, p)
 os.environ.setdefault("DISPLAY", ":99")
 
 import config
