@@ -9,6 +9,7 @@
 | 平台 | 命令 | 说明 |
 |:-----|:-----|:-----|
 | 闲鱼 | `python main.py goofish` | 扫码登录 → 人脸识别二次扫码 → 保存 cookie |
+| 闲鱼 | `python goofish_publish.py` | 发布商品（登录态检查 → 上传图片 → mtop 发布） |
 | 小红书 | `python main.py xiaohongshu` | 创作者中心扫码登录 → 保存 storage_state |
 
 ## 项目结构
@@ -20,6 +21,8 @@ autoLogin/
 ├── stealth.py           # 旧伪装脚本 — 保留但默认禁用（STEALTH_ENABLED=False）
 ├── utils.py             # 共享工具（二维码生成/cookie 处理/日志脱敏）
 ├── goofish_login.py     # 闲鱼扫码登录（3 阶段流程）
+├── goofish_publish.py   # 闲鱼发布（登录检查 → 上传 → mtop 发布）
+├── patch_goofish_cli.py # 修复 goofish-cli 硬编码指纹补丁（一键应用）
 ├── xiaohongshu_login.py # 小红书扫码登录（qr-code 接口方案）
 ├── verify_stealth.py    # 原生指纹自洽性检查
 ├── assets/              # 二维码/截图输出
@@ -99,6 +102,8 @@ python verify_stealth.py
 4. 上传接口有临时风控（`rgv587_flag: sm, action=wait`）：请求太频繁会触发，需等待冷却
 5. **判断扫码完成用 cookie，不要用页面跳转**：用户扫码确认后 cookie（unb/tracknick）立即建立，但页面可能不自动跳转仍停在登录页——轮询 cookie 最可靠
 6. **不要点击任何按钮**：二维码提取后页面停留，用户扫码后 cookie 自动建立；点击"立即登录"等按钮反而可能触发额外风控
+7. **发布失败根因（2026-08-06）**：`FAIL_SYS_SESSION_EXPIRED`（会话过期）——cookie 文件存在但服务端已失效，上传接口返回 punish（rgv587_flag: sm）。**不是 IP 风控、不是 appkey 问题**。登录后 `xy_chat`/`fleamarket` 均正常。重新扫码登录即可恢复
+8. **发布流程**：`goofish_publish.py` = 登录态检查（tracknick）→ 上传图片（goofish-cli upload）→ mtop 签名发布（`idle.pc.idleitem.publish`，SUCCESS + itemId）
 
 ### 小红书
 1. creator 登录页默认短信登录；**右上角 64x64 图标**切换到"APP扫一扫"
