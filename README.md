@@ -111,6 +111,21 @@ python verify_stealth.py
 3. 正确做法：拦截 `customer.xiaohongshu.com/api/cas/customer/web/qr-code` 接口拿 `qrCodeId`/`url`，用 qrcode 库生成二维码
 4. 主站登录（web_session）**不等于**创作者中心登录（galaxy_creator_session_id），是两套独立会话
 5. 登录态用 `storage_state`（cookies + localStorage）保存，权限 0600
+6. **macOS 伪装（2026-08-07）**：小红书设备画像库无 Linux → Linux Chrome = 「未知设备」→ 风控。
+   修复 = 完整 macOS Chrome 自洽伪装（MacIntel + UA-CH macOS + Retina + zh-CN + SwiftShader WebGL）。
+   依赖 sau 补丁：`uploader/xiaohongshu_uploader/main.py` 的 `MAC_UA` / `MAC_OVERRIDE_SCRIPT` / `_LAUNCH_ARGS` / `_apply_mac_stealth`。
+   ⚠️ WebGL 不能伪造 Apple（glVersion 暴露 Chromium → 交叉比对露馅），UNMASKED_VENDOR 保留 Google Inc.。
+7. **主站登录（评论前置）**：`python xiaohongshu_main_login.py [账号]` → 生成二维码**立即发用户**（等久必过期 → fail to login）→ 轮询检测登录 → 保存 web_session
+8. **自动评论**：`python xiaohongshu_comment.py [账号] [评论]` — 提取带 xsec_token 笔记链接 → 打开 → 评论框输入 → 提交
+9. **评论验证**：`python xiaohongshu_verify_comment.py [账号] [评论片段] [笔记URL]` — 只检查已发布评论（排除输入框误判）
+10. 评论选择器：输入框 `[contenteditable="true"]`、提交 `button[class*="submit"]`（文本「发送」）、笔记链接 `a[href*="/explore/"][href*="xsec_token"]`
+
+### 跨平台（2026-08-07）
+`config.py` 自动检测 Windows / macOS / Ubuntu：
+- `find_chrome()` — 各平台 Chrome 可执行文件路径
+- `find_patchright_path()` / `ensure_sau_importable()` — sau site-packages 定位（支持 `SAU_SITE_PACKAGES` 环境变量覆盖）
+- `ensure_display()` — Linux 无显示器自动启 Xvfb；Windows/macOS 用原生桌面
+- `xhs_cookie_file(account)` — Windows/macOS 用项目内 `cookies/` 目录，Linux 用 sau cookies
 
 ### 安全
 - 日志输出自动脱敏：不打印完整 qrCodeId / Cookie 值 / 账号标识
