@@ -81,13 +81,7 @@ async def save_page_shot(page) -> str:
             pass
         if not shot_ok:
             await page.screenshot(path=out, full_page=False)
-        # 2. 截图后立即提取配对二维码（同时间戳）
-        qr_out = ""
-        try:
-            qr_out = await extract_qr(page)
-        except Exception as e:
-            print(f"⚠️ 配对二维码提取失败: {str(e)[:60]}", flush=True)
-        print(f"📸 登录卡截图: {os.path.basename(out)} + 配对码: {os.path.basename(qr_out) if qr_out else '无'}", flush=True)
+        print(f"📸 登录卡截图: {os.path.basename(out)}", flush=True)
         return out
     except Exception as e:
         print(f"⚠️ 页面截图失败: {str(e)[:80]}", flush=True)
@@ -143,7 +137,7 @@ async def extract_qr(page) -> str:
 async def goto_login(page):
     """进入我是创作者登录页（commit 时注入 stealth，早于页面脚本）"""
     await goto_with_stealth(page, "https://creator.douyin.com/")
-    await asyncio.sleep(3)
+    await page.wait_for_timeout(3000)
     print("✅ stealth 已在页面脚本前注入", flush=True)
     if "creator-micro" in page.url:
         return "ALREADY_LOGGED"
@@ -153,7 +147,7 @@ async def goto_login(page):
     except Exception as e:
         print(f"⚠️ 点击失败(继续尝试): {str(e)[:60]}", flush=True)
     for _ in range(12):
-        await asyncio.sleep(2)
+        await page.wait_for_timeout(2000)
         has_qr = await page.evaluate("""() => {
             const scan = document.querySelector('#douyin_login_comp_scan_code');
             if (scan) {
@@ -184,7 +178,7 @@ async def check_logged_in(page) -> bool:
 async def save_login_success(page, context, browser) -> str:
     """登录成功后保存 cookie 和截图"""
     print(f"🎉 登录成功! URL={page.url[:80]}", flush=True)
-    await asyncio.sleep(3)
+    await page.wait_for_timeout(3000)
     await context.storage_state(path=str(ACCOUNT_FILE))
     print(f"✅ cookie 已保存: {ACCOUNT_FILE}", flush=True)
     stamp = ts()
@@ -254,7 +248,7 @@ async def click_face_verify(page) -> bool:
 async def extract_face_qr(page) -> str:
     """提取人脸验证二维码截图"""
     print("⏳ 等待人脸验证二维码出现...", flush=True)
-    await asyncio.sleep(5)
+    await page.wait_for_timeout(5000)
     stamp = ts()
     out = str(QR_DIR / f"douyin_face_qr_{stamp}.png")
     info = await page.evaluate("""() => {
@@ -284,7 +278,7 @@ async def wait_for_login(page, context, browser) -> str:
     face_qr_saved = False
     face_scan_wait_start = 0
     last_qr_hash = None
-    last_qr_check = 0.0
+    last_qr_check = time.monotonic()  # 初始化为当前时间，避免首次循环立即触发
     page_load_time = time.monotonic()  # 本次页面加载时刻（二维码过期线基准）
 
     while True:
@@ -294,7 +288,7 @@ async def wait_for_login(page, context, browser) -> str:
         # ★ 持续监控二维码刷新：抖音码约每 30 秒刷新一次，
         #   检测到内容变化就自动提取保存（时间序列命名），保证最新
         now = time.monotonic()
-        if now - last_qr_check >= 15:
+        if now - last_qr_check >= 30:
             last_qr_check = now
             try:
                 new_qr = await extract_qr(page)
@@ -312,7 +306,7 @@ async def wait_for_login(page, context, browser) -> str:
                 print(f"⚠️ 二维码刷新检测失败: {str(e)[:60]}", flush=True)
 
         try:
-            uc_verify = page.locator("#uc-second-verify")
+            uc_verify =  page.locator("#uc-second-verify")
             if await uc_verify.count() > 0:
                 print("🔒 检测到 #uc-second-verify 二次校验!", flush=True)
                 clicked = await click_face_verify(page)
@@ -338,10 +332,11 @@ async def wait_for_login(page, context, browser) -> str:
 
         try:
             expired = await page.evaluate("""() => {
-                const text = document.body.innerText;
+                const scan = document.querySelector('#douyin_login_comp_scan_code');
+                if (!scan) return false;
+                const text = scan.innerText || '';
                 return text.includes('二维码已过期') || text.includes('二维码失效') ||
-                       text.includes('验证失败') || text.includes('验证过期') ||
-                       text.includes('重新扫码') || text.includes('刷新二维码');
+                       text.includes('验证失败') || text.includes('验证过期');
             }""")
             if expired:
                 print("⚠️ 二维码已过期或验证失败，需要重新扫码!", flush=True)
@@ -358,7 +353,7 @@ async def wait_for_login(page, context, browser) -> str:
             write_state("RELOAD", "超时reload")
             return "RETRY"
 
-        await asyncio.sleep(2)
+        await page.wait_for_timeout(2000)
 
 
 async def main():
@@ -404,23 +399,22 @@ async def main():
                 return
             if state != "QR_READY":
                 print("⚠️ 二维码未出现，重载", flush=True)
-                await asyncio.sleep(3)
+                await page.wait_for_timeout(3000)
                 continue
 
             qr_path = await extract_qr(page)
             write_latest(qr_path)
             write_state("QR_READY", qr_path)
             # ★ 首次即截完整页面（含二维码）
-            await save_page_shot(page)
+            # await save_page_shot(page)
             print(f"⏳ 等待扫码...（不自动 reload，避免打断登录确认）", flush=True)
             print(f"   📱 用抖音 APP 扫一扫二维码: {qr_path}", flush=True)
             print(f"   💡 提示: 扫码后请在手机上点「确认登录」", flush=True)
-
             login_result = await wait_for_login(page, context, browser)
             if login_result == "SUCCESS":
                 return
             print("⚠️ 验证未通过，重新获取二维码...", flush=True)
-            await asyncio.sleep(3)
+            await page.wait_for_timeout(1000*300)
 
         await context.close()
         await browser.close()
