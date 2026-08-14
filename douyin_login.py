@@ -155,6 +155,14 @@ async def extract_qr(page) -> str:
 
 async def goto_login(page):
     """进入登录页（commit 时注入 stealth，早于页面脚本）"""
+    # ★ 每次刷新页面时清空 qr 文件夹（含 hd/ 子目录），避免旧码混淆/发送过期码
+    for _d in (QR_DIR, QR_DIR / "hd"):
+        if _d.exists():
+            for _f in _d.glob("*.png"):
+                try:
+                    _f.unlink(missing_ok=True)
+                except Exception:
+                    pass
     await goto_with_stealth(page, "https://creator.douyin.com/")
     await page.wait_for_timeout(3000)
     print("✅ stealth 已在页面脚本前注入", flush=True)
