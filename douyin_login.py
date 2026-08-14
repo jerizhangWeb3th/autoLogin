@@ -308,10 +308,10 @@ async def wait_for_login(page, context, browser) -> str:
         if await check_logged_in(page):
             return await save_login_success(page, context, browser)
 
-        # ★ 持续监控二维码刷新：抖音码约每 30 秒刷新一次，
+        # ★ 持续监控二维码刷新：抖音码约每 300 秒（5分钟）刷新一次，
         #   检测到内容变化就自动提取保存（时间序列命名），保证最新
         now = time.monotonic()
-        if now - last_qr_check >= 30:
+        if now - last_qr_check >= 300:
             last_qr_check = now
             try:
                 new_qr = await extract_qr(page)
@@ -323,7 +323,7 @@ async def wait_for_login(page, context, browser) -> str:
                         write_latest(new_qr)
                         write_state("QR_READY", new_qr)
                         print(f"🔄 二维码已刷新(新时间序列): {os.path.basename(new_qr)}", flush=True)
-                # ★ 无条件截图（每30秒都截最新的，保证发送时总有新鲜截图）
+                # ★ 无条件截图（每300秒都截最新的，保证发送时总有新鲜截图）
                 await save_page_shot(page)
             except Exception as e:
                 print(f"⚠️ 二维码刷新检测失败: {str(e)[:60]}", flush=True)
