@@ -460,6 +460,7 @@ async def main():
             print(f"⏳ 等待扫码...（不自动 reload，避免打断登录确认）", flush=True)
             print(f"   📱 用抖音 APP 扫一扫二维码: {qr_path}", flush=True)
             print(f"   💡 提示: 扫码后请在手机上点「确认登录」", flush=True)
+            await page.wait_for_timeout(300000)
             login_result = await wait_for_login(page, context, browser)
             if login_result == "SUCCESS":
                 return
