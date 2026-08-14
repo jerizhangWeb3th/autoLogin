@@ -154,17 +154,13 @@ async def extract_qr(page) -> str:
 
 
 async def goto_login(page):
-    """进入我是创作者登录页（commit 时注入 stealth，早于页面脚本）"""
+    """进入登录页（commit 时注入 stealth，早于页面脚本）"""
     await goto_with_stealth(page, "https://creator.douyin.com/")
     await page.wait_for_timeout(3000)
     print("✅ stealth 已在页面脚本前注入", flush=True)
     if "creator-micro" in page.url:
         return "ALREADY_LOGGED"
-    try:
-        await page.get_by_text("我是创作者", exact=True).first.click(timeout=10000)
-        print("✅ 点击「我是创作者」", flush=True)
-    except Exception as e:
-        print(f"⚠️ 点击失败(继续尝试): {str(e)[:60]}", flush=True)
+    # ★ 登录卡默认显示「我是创作者」tab（active），二维码自动渲染，无需点击
     # ★ 抖音新版二维码是 SVG 渲染，需等待 ~10 秒才渲染完成
     for _ in range(12):
         await page.wait_for_timeout(2000)
