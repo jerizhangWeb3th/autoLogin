@@ -107,28 +107,82 @@ def write_state(state: str, payload: str = ""):
 
 
 async def extract_qr(page) -> str:
-    """提取二维码 base64 存 PNG"""
+    """提取二维码 PNG（抖音新版：Lottie 动画渲染）
+
+    关键：冻结动画后截图 #default_scan_code_guide 容器，
+    得到静态二维码（避免扫描线动画遮挡）。
+    """
     stamp = ts()
+    out = str(QR_DIR / f"douyin_qr_{stamp}.png")
+    # 0. ★ 等二维码 SVG 真正渲染完成
+    for _ in range(15):  # 最多等 15 秒
+        ready = await page.evaluate("""() => {
+            const guide = document.querySelector('#default_scan_code_guide');
+            if (guide && guide.querySelector('svg[viewBox="0 0 800 926"]')) {
+                const svg = guide.querySelector('svg');
+                const rect = svg.getBoundingClientRect();
+                return rect.width > 100 && rect.height > 100;
+            }
+            return false;
+        }""")
+        if ready:
+            break
+        await page.wait_for_timeout(1000)
+    # 0.5 ★ SVG 出现后再额外等 5 秒（引导动画 → 实际二维码过渡）
+    await page.wait_for_timeout(5000)
+    # 1. ★ 冻结 Lottie 动画（CSS 暂停 + SVG pauseAnimations），让二维码静止
+    try:
+        await page.evaluate("""() => {
+            const style = document.createElement('style');
+            style.textContent = '*, *::before, *::after { animation-play-state: paused !important; transition: none !important; }';
+            document.head.appendChild(style);
+            document.querySelectorAll('svg').forEach(s => { try { s.pauseAnimations(); } catch(e) {} });
+            return true;
+        }""")
+        await page.wait_for_timeout(1500)
+    except Exception as e:
+        print(f"⚠️ 冻结动画失败: {str(e)[:50]}", flush=True)
+    # 2. 截图二维码容器（静态二维码），失败则等待重试（Lottie 渲染慢）
+    for _attempt in range(4):
+        try:
+            el = page.locator("#default_scan_code_guide")
+            if await el.count() > 0:
+                await el.screenshot(path=out, timeout=5000)
+                if os.path.getsize(out) > 5 * 1024:
+                    print(f"✅ 二维码(冻结动画截图): {out}", flush=True)
+                    return out
+        except Exception:
+            pass
+        await page.wait_for_timeout(3000)
+    # 2. 旧版：找 img data:image（仅 png/jpeg，跳过 svg+xml 避免损坏）
     info = await page.evaluate("""() => {
         const scan = document.querySelector('#douyin_login_comp_scan_code');
         if (scan) {
             const img = scan.querySelector('img');
-            if (img && img.src.startsWith('data:image')) return img.src;
+            if (img && (img.src.startsWith('data:image/png') || img.src.startsWith('data:image/jpeg'))) return img.src;
         }
         const imgs = document.querySelectorAll('img');
         for (const img of imgs) {
             const src = String(img.src || '');
-            if (src.startsWith('data:image') && img.getBoundingClientRect().width > 100) return src;
+            if ((src.startsWith('data:image/png') || src.startsWith('data:image/jpeg')) && img.getBoundingClientRect().width > 100) return src;
         }
         return '';
     }""")
-    out = str(QR_DIR / f"douyin_qr_{stamp}.png")
     if info.startswith("data:image"):
         b64 = info.split(",", 1)[1]
         with open(out, "wb") as f:
             f.write(base64.b64decode(b64))
         print(f"✅ 二维码(base64): {out}", flush=True)
         return out
+    # 3. 最后 fallback：截图整个登录卡容器
+    try:
+        el2 = page.locator("#douyin_login_comp_scan_code")
+        if await el2.count() > 0:
+            await el2.screenshot(path=out, timeout=5000)
+            print(f"✅ 二维码(登录卡截图): {out}", flush=True)
+            return out
+    except Exception:
+        pass
     await page.screenshot(path=out, clip={"x": 737, "y": 282, "width": 329, "height": 305})
     print(f"✅ 二维码(裁剪): {out}", flush=True)
     return out
@@ -146,13 +200,18 @@ async def goto_login(page):
         print("✅ 点击「我是创作者」", flush=True)
     except Exception as e:
         print(f"⚠️ 点击失败(继续尝试): {str(e)[:60]}", flush=True)
+    # ★ 抖音新版二维码是 SVG 渲染，需等待 ~10 秒才渲染完成
     for _ in range(12):
         await page.wait_for_timeout(2000)
         has_qr = await page.evaluate("""() => {
+            // 新版：SVG 二维码容器
+            const guide = document.querySelector('#default_scan_code_guide');
+            if (guide && guide.querySelector('svg[viewBox="0 0 800 926"]')) return true;
+            // 旧版：img data:image
             const scan = document.querySelector('#douyin_login_comp_scan_code');
             if (scan) {
                 const img = scan.querySelector('img');
-                return !!(img && img.src.startsWith('data:image'));
+                if (img && img.src.startsWith('data:image')) return true;
             }
             return false;
         }""")
