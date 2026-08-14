@@ -11,7 +11,7 @@
 import sys
 from pathlib import Path
 
-BASE_DIR = Path(__file__).parent.resolve()
+BASE_DIR = Path(__file__).parent.parent.resolve()  # 项目根目录
 QR_DIR = BASE_DIR / "qr"
 
 

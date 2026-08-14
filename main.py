@@ -1,45 +1,42 @@
-#!/usr/bin/env python3
-"""中国电商/社交平台扫码登录 CLI — 闲鱼 + 小红书。
+"""
+中国平台登录大项目 — 统一入口
 
-用法:
-    python main.py goofish          # 闲鱼扫码登录（含人脸识别二次扫码）
-    python main.py xiaohongshu      # 小红书创作者中心扫码登录
+【架构】
+    autoLogin/
+    ├── stealth_core.py          # ★ 浏览器匿名性核心（独立优化点）
+    ├── douyin_login.py          # 抖音登录模块
+    ├── xiaohongshu_login.py     # 小红书登录模块
+    ├── goofish_login.py         # 闲鱼登录模块
+    ├── goofish_publish.py       # 闲鱼发布模块
+    ├── verify_stealth.py        # 匿名性验证脚本
+    └── tools/                   # 二维码/发码工具
+
+【设计原则】
+1. 浏览器匿名性（stealth_core.py）单独拎出 —— 匿名性不足只改这一个文件
+2. 各平台登录是独立操作流程，互不影响
+3. 跨平台：Windows / macOS / Linux 自动适配
 """
 
 import argparse
 import asyncio
-import os
 import sys
-from pathlib import Path
-
-# 本目录模块
-sys.path.insert(0, str(Path(__file__).parent))
-
-import config
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="中国平台扫码登录工具（闲鱼/小红书）— Xvfb 有头模式 + stealth 伪装",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__,
-    )
-    parser.add_argument(
-        "platform",
-        choices=["goofish", "xiaohongshu"],
-        help="目标平台",
-    )
+def main():
+    parser = argparse.ArgumentParser(description="中国平台登录")
+    parser.add_argument("platform", choices=["douyin", "xiaohongshu", "goofish"],
+                        help="要登录的平台")
     args = parser.parse_args()
 
-    # 确保虚拟显示器
-    config.ensure_xvfb()
-
-    if args.platform == "goofish":
-        import goofish_login
-        asyncio.run(goofish_login.run_login())
+    if args.platform == "douyin":
+        from douyin_login import main as douyin_main
+        asyncio.run(douyin_main())
     elif args.platform == "xiaohongshu":
-        import xiaohongshu_login
-        asyncio.run(xiaohongshu_login.run_login())
+        from xiaohongshu_login import main as xhs_main
+        asyncio.run(xhs_main())
+    elif args.platform == "goofish":
+        from goofish_login import main as goofish_main
+        asyncio.run(goofish_main())
 
 
 if __name__ == "__main__":

@@ -11,9 +11,16 @@ venv/
 *.key
 *.pem
 
-# 截图产物
+# 截图/二维码产物
 assets/*.png
 !assets/.gitkeep
+qr/
+cookies/
+
+# 运行时状态
+login_state.txt
+qr_latest.txt
+*.log
 
 # 系统
 .DS_Store

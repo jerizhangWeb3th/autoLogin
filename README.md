@@ -1,138 +1,75 @@
-# 中国平台扫码登录工具（闲鱼 + 小红书）
+# 中国平台登录项目（抖音 · 小红书 · 闲鱼）
 
-把闲鱼（Goofish）和小红书（Xiaohongshu）的扫码登录流程融合为一个项目。
-基于 **Patchright + 真 Chrome + Xvfb 有头模式 + 持久化 Profile**，
-不做大量硬编码指纹伪造。
+三平台扫码登录统一项目。基于 **Patchright + 真 Chrome + stealth_core 匿名性核心**，
+登录流程与匿名性伪装解耦，各平台独立维护。
 
 ## 功能
 
 | 平台 | 命令 | 说明 |
 |:-----|:-----|:-----|
+| 抖音 | `python main.py douyin` | 创作者中心扫码登录（含刷脸二次验证） |
+| 小红书 | `python main.py xiaohongshu` | 扫码登录 → 保存 cookie |
 | 闲鱼 | `python main.py goofish` | 扫码登录 → 人脸识别二次扫码 → 保存 cookie |
-| 闲鱼 | `python goofish_publish.py` | 发布商品（登录态检查 → 上传图片 → mtop 发布） |
-| 小红书 | `python main.py xiaohongshu` | 创作者中心扫码登录 → 保存 storage_state |
+| 闲鱼发布 | `python goofish_publish.py` | 发布商品（登录态检查 → 上传图片 → mtop 发布） |
 
 ## 项目结构
 
 ```
 autoLogin/
-├── main.py              # CLI 入口
-├── config.py            # 共享配置（最小启动参数/路径/Xvfb）
-├── stealth.py           # 旧伪装脚本 — 保留但默认禁用（STEALTH_ENABLED=False）
-├── utils.py             # 共享工具（二维码生成/cookie 处理/日志脱敏）
-├── goofish_login.py     # 闲鱼扫码登录（3 阶段流程）
-├── goofish_publish.py   # 闲鱼发布（登录检查 → 上传 → mtop 发布）
-├── patch_goofish_cli.py # 修复 goofish-cli 硬编码指纹补丁（一键应用）
-├── xiaohongshu_login.py # 小红书扫码登录（qr-code 接口方案）
-├── verify_stealth.py    # 原生指纹自洽性检查
-├── assets/              # 二维码/截图输出
-└── requirements.txt     # 固定版本
+├── main.py               # CLI 统一入口（douyin / xiaohongshu / goofish）
+├── stealth_core.py       # ★ 浏览器匿名性核心（独立优化点，70+ 检测点）
+├── douyin_login.py       # 抖音登录模块
+├── xiaohongshu_login.py  # 小红书登录模块
+├── goofish_login.py      # 闲鱼登录模块
+├── goofish_publish.py    # 闲鱼发布模块
+├── patch_goofish_cli.py  # goofish-cli 硬编码指纹补丁（一键应用）
+├── config.py             # 共享配置（路径 / Xvfb / 常量）
+├── utils.py              # 共享工具（日志脱敏 / 二维码 / cookie 处理）
+├── verify_stealth.py     # 匿名性验证（6 项自检）
+├── test_stealth_full.py  # 匿名性完整测试（39 项）
+├── tools/                # 二维码/发码工具
+│   ├── qr_tool.py        #   取最新二维码/截图
+│   ├── qr_to_hd.py       #   二维码高清放大（2048×2048，防微信压缩模糊）
+│   ├── send_qr_now.py    #   发送工具（md5 验证防发旧码）
+│   └── send_latest.py    #   新鲜截图助手
+├── assets/               # 输出（截图/二维码）
+├── cookies/              # cookie 保存目录（gitignore）
+├── qr/                   # 二维码运行时目录（gitignore）
+└── requirements.txt      # 固定版本依赖
 ```
 
-## 设计原则：减少伪装，提高一致性
+## 架构设计原则
 
-本项目刻意**不做**大量 JS 指纹伪造（Canvas/WebGL/Audio/Chrome API 改写）。
-原因：
+1. **匿名性单独拎出** —— `stealth_core.py` 是浏览器匿名性唯一核心，
+   匿名性不足时只改这一个文件；登录模块不混入伪装细节。
+2. **登录流程解耦** —— 各平台登录是独立操作流程，互不影响、各自演进。
+3. **统一入口** —— `main.py` 按平台参数分发到对应登录模块。
+4. **跨平台** —— Windows / macOS / Linux 自动适配（Chrome 路径 / DISPLAY / 伪装策略）。
 
-1. **硬编码指纹产生矛盾信号**：实际环境是 Linux+Xvfb，却声明 macOS/Retina/
-   Chrome126，系统字体、UA-CH、GPU、WebGPU、TLS 很容易被交叉比对识破
-2. **Patchright 官方建议**：真 Chrome、持久化上下文、`no_viewport=True`，
-   明确不要自定义 UA 或 headers
-3. **伪装脚本自身可检测**：`screen.height=900` 但 `outerHeight=985`、
-   权限 denied 但定位成功、WebGL 用 `Math.random()` 多次读取不一致
-4. **注入可能破坏网站**：Canvas 像素改写、WebGL/Audio/媒体设备重写
-   可能影响二维码、上传组件和页面正常逻辑
-5. **持久化 Profile 积累的真实指纹就是最好的伪装**
+## 匿名性方案（stealth_core）
 
-保留的配置（收敛到最小）：
-```python
-def launch_kwargs() -> dict:
-    return {
-        "channel": "chrome",      # 真 Chrome（非 bundled chromium）
-        "headless": False,        # Patchright 反检测在 headful 才完整
-        "no_viewport": True,      # 窗口尺寸由系统真实产生
-        "locale": "zh-CN",        # 部署环境匹配
-        "timezone_id": "Asia/Shanghai",
-        # 容器/root 环境才加 ["--no-sandbox"]
-    }
-```
+- **注入方式**：`goto(wait_until='commit')` 后立即 `page.evaluate(STEALTH)`，
+  赶在页面脚本执行前完成伪装（绕过 patchright add_init_script bug + 抖音 CSP）。
+- **检测覆盖**：webdriver / CDP 残留 / Chrome 对象 / Navigator / UA-CH / WebGL /
+  Canvas / Audio / 权限 / 媒体 / Battery / 网络 / Performance 等 70+ 检测点。
+- **验证**：本地 `test_stealth_full.py` 39/39 通过；第三方 bot.incolumitas.com 26/28。
 
-**注意**：
-- `--disable-blink-features=AutomationControlled` 已由 Patchright 处理，无需重复
-- 每个平台/账号使用独立且**长期稳定**的 `user_data_dir`，不要每次随机
-- Patchright 与 Chrome 版本固定（`requirements.txt` 用 `==`），人工控制升级
-- `stealth.py` 保留但默认禁用（`STEALTH_ENABLED=False`），不接入运行流程
+## 抖音登录要点
 
-## 环境要求
+- 二维码按时间序列命名（`YYYYMMDD_HHMMSS`），每 30s 检测刷新。
+- **扫码确认期间绝不自动 reload 页面**（否则二维码换新 → 手机确认的旧码作废）。
+- 发送二维码用 `tools/qr_to_hd.py` 放大到 2048×2048（微信压缩后仍可扫）。
+- 发送前用 `tools/send_qr_now.py` 验证 md5（源 == 发送），防发旧码。
 
-- Linux + Xvfb（虚拟显示器，有头模式必需）
-- 真 Chrome 浏览器
-- Python 3.10+
+## 安装
 
 ```bash
-# Xvfb 虚拟显示器
-Xvfb :99 -screen 0 1440x900x24 &
-
-# Python 依赖（版本已固定）
 pip install -r requirements.txt
+# patchright 浏览器（真 Chrome 走系统，无需额外安装）
 ```
 
-## 使用
+## 注意事项
 
-```bash
-# 闲鱼登录（输出二维码 → 用户扫码 → 人脸识别二维码 → 用户识别 → 自动保存 cookie）
-python main.py goofish
-
-# 小红书登录（输出二维码 → 用户扫码 → 自动保存 storage_state）
-python main.py xiaohongshu
-
-# 原生指纹自洽性检查
-python verify_stealth.py
-```
-
-登录过程输出 `QR_READY` / `FACE_QR_READY` / `LOGIN_SUCCESS` 等标记，
-二维码图片保存在 `assets/` 目录，可直接发给用户扫码。
-
-## 关键经验（踩坑记录）
-
-### 闲鱼
-1. **必须用有头模式**（Xvfb）：headless 扫码会被阿里风控拒绝，不发放完整登录态
-2. **扫码后有二次人脸识别**：新设备登录会跳转 `identity_verify.htm`，需把人脸二维码发给用户再扫一次
-3. **cookie 必须只保留 `.goofish.com` 域**：混入 `.taobao.com` 域的同名 cookie（cookie2/_m_h5_tk/tfstk）会导致上传接口登录失效
-4. 上传接口有临时风控（`rgv587_flag: sm, action=wait`）：请求太频繁会触发，需等待冷却
-5. **判断扫码完成用 cookie，不要用页面跳转**：用户扫码确认后 cookie（unb/tracknick）立即建立，但页面可能不自动跳转仍停在登录页——轮询 cookie 最可靠
-6. **不要点击任何按钮**：二维码提取后页面停留，用户扫码后 cookie 自动建立；点击"立即登录"等按钮反而可能触发额外风控
-7. **发布失败根因（2026-08-06）**：`FAIL_SYS_SESSION_EXPIRED`（会话过期）——cookie 文件存在但服务端已失效，上传接口返回 punish（rgv587_flag: sm）。**不是 IP 风控、不是 appkey 问题**。登录后 `xy_chat`/`fleamarket` 均正常。重新扫码登录即可恢复
-8. **发布流程**：`goofish_publish.py` = 登录态检查（tracknick）→ 上传图片（goofish-cli upload）→ mtop 签名发布（`idle.pc.idleitem.publish`，SUCCESS + itemId）
-
-### 小红书
-1. creator 登录页默认短信登录；**右上角 64x64 图标**切换到"APP扫一扫"
-2. 页面 canvas 二维码（html2canvas 绘制）在自动化环境**渲染失败**，抓不到
-3. 正确做法：拦截 `customer.xiaohongshu.com/api/cas/customer/web/qr-code` 接口拿 `qrCodeId`/`url`，用 qrcode 库生成二维码
-4. 主站登录（web_session）**不等于**创作者中心登录（galaxy_creator_session_id），是两套独立会话
-5. 登录态用 `storage_state`（cookies + localStorage）保存，权限 0600
-6. **macOS 伪装（2026-08-07）**：小红书设备画像库无 Linux → Linux Chrome = 「未知设备」→ 风控。
-   修复 = 完整 macOS Chrome 自洽伪装（MacIntel + UA-CH macOS + Retina + zh-CN + SwiftShader WebGL）。
-   依赖 sau 补丁：`uploader/xiaohongshu_uploader/main.py` 的 `MAC_UA` / `MAC_OVERRIDE_SCRIPT` / `_LAUNCH_ARGS` / `_apply_mac_stealth`。
-   ⚠️ WebGL 不能伪造 Apple（glVersion 暴露 Chromium → 交叉比对露馅），UNMASKED_VENDOR 保留 Google Inc.。
-7. **主站登录（评论前置）**：`python xiaohongshu_main_login.py [账号]` → 生成二维码**立即发用户**（等久必过期 → fail to login）→ 轮询检测登录 → 保存 web_session
-8. **自动评论**：`python xiaohongshu_comment.py [账号] [评论]` — 提取带 xsec_token 笔记链接 → 打开 → 评论框输入 → 提交
-9. **评论验证**：`python xiaohongshu_verify_comment.py [账号] [评论片段] [笔记URL]` — 只检查已发布评论（排除输入框误判）
-10. 评论选择器：输入框 `[contenteditable="true"]`、提交 `button[class*="submit"]`（文本「发送」）、笔记链接 `a[href*="/explore/"][href*="xsec_token"]`
-
-### 跨平台（2026-08-07）
-`config.py` 自动检测 Windows / macOS / Ubuntu：
-- `find_chrome()` — 各平台 Chrome 可执行文件路径
-- `find_patchright_path()` / `ensure_sau_importable()` — sau site-packages 定位（支持 `SAU_SITE_PACKAGES` 环境变量覆盖）
-- `ensure_display()` — Linux 无显示器自动启 Xvfb；Windows/macOS 用原生桌面
-- `xhs_cookie_file(account)` — Windows/macOS 用项目内 `cookies/` 目录，Linux 用 sau cookies
-
-### 安全
-- 日志输出自动脱敏：不打印完整 qrCodeId / Cookie 值 / 账号标识
-- cookie 文件与 storage_state 权限 0600
-- 固定依赖版本，避免无控制升级引入破坏
-
-## 免责声明
-
-本工具仅用于个人账号自动化登录研究。请遵守各平台服务条款，
-不要用于批量注册、营销骚扰等违规用途。
+- 每个平台/账号使用独立且长期稳定的 Profile，不要每次随机。
+- 版本固定（`requirements.txt` 用 `==`），人工控制升级。
+- 闲鱼发布依赖 goofish-cli（`patch_goofish_cli.py` 修复其硬编码指纹）。

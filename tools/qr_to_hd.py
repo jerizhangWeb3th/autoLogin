@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 from PIL import Image
 
-BASE_DIR = Path(__file__).parent.resolve()
+BASE_DIR = Path(__file__).parent.parent.resolve()  # 项目根目录
 QR_DIR = BASE_DIR / "qr"
 HD_DIR = QR_DIR / "hd"
 HD_DIR.mkdir(exist_ok=True)

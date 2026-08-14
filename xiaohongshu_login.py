@@ -1,149 +1,135 @@
-"""小红书（Xiaohongshu）创作者中心扫码登录。
-
-用户确认的流程：生成二维码直接发给用户扫码，扫完自动保存登录态。
-
-关键经验：
-  - creator 登录页默认短信登录；右上角 64x64 图标切到"APP扫一扫"
-  - 页面 canvas 二维码（html2canvas）在自动化环境绘制失败，抓不到
-  - 正确做法：从 qr-code 接口拿 qrCodeId/url，用 qrcode 库生成二维码
-  - www.xiaohongshu.com 主站登录（web_session）≠ creator 登录（galaxy_creator_session_id）
+#!/usr/bin/env python3
 """
+小红书扫码登录模块
 
+【匿名性】来自 stealth_core.py（浏览器匿名性核心模块，独立优化点）
+【流程】本模块只管小红书登录操作流程
+   1. 打开 xiaohongshu.com → 提取登录二维码
+   2. 用户扫码 → 轮询检测登录模态框消失
+   3. 保存 cookie
+"""
 import asyncio
-import json
 import os
 import sys
 import time
+import base64
 from pathlib import Path
 
-# social-auto-upload 自带 patchright
-for p in [
-    "/root/.local/share/uv/tools/social-auto-upload/lib/python3.11/site-packages",
-    "/root/.local/share/uv/tools/social-auto-upload/lib/python3.11/site-packages/patchright",
-]:
-    if p not in sys.path:
-        sys.path.insert(0, p)
+BASE_DIR = Path(__file__).parent.resolve()
+sys.path.insert(0, str(BASE_DIR))
 
-os.environ.setdefault("DISPLAY", ":99")
+# patchright（sau 安装目录）
+_sau = str(Path.home() / ".local/share/uv/tools/social-auto-upload/lib/python3.11/site-packages")
+if _sau not in sys.path:
+    sys.path.insert(0, _sau)
 
-import config
-import utils
+from stealth_core import MAC_UA, LAUNCH_ARGS, STEALTH_SCRIPT, find_chrome, ensure_display, goto_with_stealth  # noqa: E402
 
-MAX_WAIT = 300
+QR_DIR = BASE_DIR / "qr"
+COOKIE_DIR = BASE_DIR / "cookies"
+QR_DIR.mkdir(exist_ok=True)
+COOKIE_DIR.mkdir(exist_ok=True)
+
+ACCOUNT_FILE = COOKIE_DIR / "xiaohongshu_hermes.json"
+STATE_FILE = BASE_DIR / "login_state.txt"
+QR_OUT = str(QR_DIR / "xhs_qr_login.png")
 
 
-async def run_login() -> None:
-    """小红书创作者中心扫码登录主流程。"""
+def write_state(state: str, payload: str = ""):
+    STATE_FILE.write_text(f"{state} {payload}".strip())
+    print(f"STATE:{state} {payload}", flush=True)
+
+
+async def extract_qr(page) -> str:
+    """提取小红书登录二维码（data:image/png 最大的）"""
+    info = await page.evaluate("""() => {
+        const candidates = [];
+        document.querySelectorAll('img').forEach(img => {
+            const src = img.src || '';
+            if (src.startsWith('data:image/png')) candidates.push({src, w: img.width});
+        });
+        candidates.sort((a, b) => b.w - a.w);
+        return candidates.length > 0 ? candidates[0].src : null;
+    }""")
+    if info and isinstance(info, str) and info.startswith("data:image"):
+        with open(QR_OUT, "wb") as f:
+            f.write(base64.b64decode(info.split(",", 1)[1]))
+        print(f"✅ 小红书二维码: {QR_OUT} ({os.path.getsize(QR_OUT)//1024}KB)", flush=True)
+        return QR_OUT
+    print("❌ 二维码未找到", flush=True)
+    return ""
+
+
+async def main():
+    print("=" * 56)
+    print("小红书 扫码登录")
+    print("=" * 56)
+
+    ensure_display()
+    chrome = find_chrome()
+    if chrome:
+        print(f"Chrome: {chrome}")
+
     from patchright.async_api import async_playwright
 
-    config.XHS_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
-    utils.log("🚀 启动有头模式 Chrome（小红书）...")
-
     async with async_playwright() as pw:
-        context = await pw.chromium.launch_persistent_context(
-            user_data_dir=str(config.XHS_PROFILE_DIR),
-            **config.launch_kwargs(),
+        launch_kwargs = dict(
+            headless=False,
+            args=LAUNCH_ARGS,
         )
-        page = context.pages[0] if context.pages else await context.new_page()
+        if chrome:
+            launch_kwargs["executable_path"] = chrome
 
-        # 捕获 qr-code 接口响应
-        qr_data = {}
-
-        async def on_response(resp):
-            if "qr-code" in resp.url or "qrcode" in resp.url:
-                try:
-                    body = await resp.json()
-                    data = body.get("data") or {}
-                    if data.get("url") or data.get("qrCodeId"):
-                        qr_data.update(data)
-                except Exception:
-                    pass
-
-        page.on("response", lambda r: asyncio.create_task(on_response(r)))
-
-        await page.goto(
-            "https://creator.xiaohongshu.com/login",
-            wait_until="domcontentloaded", timeout=30000,
+        browser = await pw.chromium.launch(**launch_kwargs)
+        context = await browser.new_context(
+            viewport={"width": 1440, "height": 900},
+            locale="zh-CN",
+            timezone_id="Asia/Shanghai",
+            device_scale_factor=2,
+            user_agent=MAC_UA,
         )
-        await page.wait_for_timeout(8000)
+        await context.add_init_script(STEALTH_SCRIPT)
+        page = await context.new_page()
 
-        # 点右上角扫码图标（64x64，位于登录框右上角）
-        clicked = await page.evaluate(
-            """() => {
-                const imgs = document.querySelectorAll('img');
-                for (const img of imgs) {
-                    const r = img.getBoundingClientRect();
-                    if (r.x > 1150 && r.y < 350 && r.width > 30 && r.width < 100) {
-                        img.click(); return true;
-                    }
-                }
-                return false;
-            }"""
-        )
-        utils.log(f"✅ 点击扫码tab: {clicked}")
+        await goto_with_stealth(page, "https://www.xiaohongshu.com", timeout=30000)
+        await asyncio.sleep(8)
+        print("✅ stealth 已在页面脚本前注入", flush=True)
 
-        # 等 qr-code 接口返回
-        for _ in range(10):
-            if qr_data:
-                break
-            await page.wait_for_timeout(1000)
-
-        if not qr_data:
-            utils.log("❌ 未捕获 qr-code 接口")
-            await context.close()
-            return
-
-        qr_url = qr_data.get("url") or qr_data.get("qrCodeId", "")
-        qr_id = qr_data.get("id") or qr_data.get("qrCodeId", "")
-        utils.log(f"🎯 qrCodeId: {(qr_id or '')[:8]}...")
-        # 二维码内容 url 含敏感 qrCodeId，不打印完整值
-
-        # 用 qrcode 库生成二维码（页面 canvas 抓不到，必须走接口）
-        qr_out = str(config.ASSETS_DIR / "xiaohongshu_qr_login.png")
-        if utils.generate_qr_png(qr_url, qr_out):
-            utils.log(f"✅ 二维码: {qr_out} ({os.path.getsize(qr_out)//1024}KB)")
-        print("QR_READY")  # 标记：二维码已生成，可发给用户
-
-        # 等待扫码确认（页面跳转 / 登录 cookie 出现）
-        utils.log(f"🔍 等待扫码确认 (最长 {MAX_WAIT}s)...")
-        start = time.time()
-        logged_in = False
-        while time.time() - start < MAX_WAIT:
-            await page.wait_for_timeout(5000)
-            url = page.url
-            if "creator.xiaohongshu.com" in url and "/login" not in url:
-                utils.log(f"🎉 页面已跳转: {url}")
-                logged_in = True
-                break
-            cookies = await context.cookies()
-            names = {c["name"] for c in cookies}
-            if "galaxy_creator_session_id" in names or "web_session" in names:
-                utils.log("🎉 检测到登录 cookie!")
-                logged_in = True
-                break
-            elapsed = int(time.time() - start)
-            if elapsed % 30 == 0:
-                utils.log(f"⏳ 等待中... {elapsed}s")
-
-        if logged_in:
-            await page.wait_for_timeout(3000)
-            await utils.save_storage_state(context)
-            # 跳到创作者主页截图确认
-            await page.goto(
-                "https://creator.xiaohongshu.com",
-                wait_until="domcontentloaded", timeout=30000,
-            )
-            await page.wait_for_timeout(5000)
-            shot = str(config.ASSETS_DIR / "xiaohongshu_logged_in.png")
-            await page.screenshot(path=shot, full_page=True)
-            utils.log(f"📸 登录后页面: {shot}")
-            print("LOGIN_SUCCESS")
+        qr_path = await extract_qr(page)
+        if qr_path:
+            write_state("QR_READY", qr_path)
+            print(f"📱 请用小红书 APP 扫码: {qr_path}", flush=True)
         else:
-            print("TIMEOUT")
+            # fallback: 整页截图（二维码可能在页面上）
+            shot = str(QR_DIR / "xhs_login_page.png")
+            await page.screenshot(path=shot, full_page=False)
+            print(f"📸 页面截图: {shot}", flush=True)
+            write_state("QR_READY", shot)
+
+        # 轮询检测登录（登录模态框消失 = 登录成功）
+        detected = False
+        for i in range(80):
+            await asyncio.sleep(3)
+            try:
+                state = await page.evaluate("""() => {
+                    const text = document.body.innerText;
+                    return {hasLoginModal: text.includes('手机号登录') || text.includes('登录后推荐')};
+                }""")
+                if isinstance(state, dict) and not state.get("hasLoginModal", True):
+                    print(f"✅ 登录成功! ({i*3}s)", flush=True)
+                    detected = True
+                    break
+            except Exception:
+                pass
+
+        await asyncio.sleep(2)
+        await context.storage_state(path=str(ACCOUNT_FILE))
+        print(f"✅ cookie 已保存: {ACCOUNT_FILE}", flush=True)
+        write_state("SUCCESS" if detected else "UNKNOWN", str(ACCOUNT_FILE))
 
         await context.close()
+        await browser.close()
 
 
 if __name__ == "__main__":
-    config.ensure_xvfb()
-    asyncio.run(run_login())
+    asyncio.run(main())
