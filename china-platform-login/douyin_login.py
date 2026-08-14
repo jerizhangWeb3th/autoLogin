@@ -279,7 +279,6 @@ async def wait_for_login(page, context, browser) -> str:
     face_scan_wait_start = 0
     last_qr_hash = None
     last_qr_check = time.monotonic()  # 初始化为当前时间，避免首次循环立即触发
-    page_load_time = time.monotonic()  # 本次页面加载时刻（二维码过期线基准）
 
     while True:
         if await check_logged_in(page):
@@ -300,7 +299,7 @@ async def wait_for_login(page, context, browser) -> str:
                         write_latest(new_qr)
                         write_state("QR_READY", new_qr)
                         print(f"🔄 二维码已刷新(新时间序列): {os.path.basename(new_qr)}", flush=True)
-                # ★ 无条件截图（每15秒都截最新的，保证发送时总有新鲜截图）
+                # ★ 无条件截图（每30秒都截最新的，保证发送时总有新鲜截图）
                 await save_page_shot(page)
             except Exception as e:
                 print(f"⚠️ 二维码刷新检测失败: {str(e)[:60]}", flush=True)
@@ -345,15 +344,11 @@ async def wait_for_login(page, context, browser) -> str:
         except Exception:
             pass
 
-        # ★ 二维码不自动刷新（页面 img src 只在加载时生成，实测50s不变）。
-        #   每轮循环检查：若距本次页面加载已超 280 秒（约5分钟过期线），
-        #   主动 reload 获取全新码。已登录会先被 check_logged_in 捕获，不会误打断。
-        if time.monotonic() - page_load_time > 280:
-            print("⏰ 二维码已超过5分钟过期线，reload 页面获取新码...", flush=True)
-            write_state("RELOAD", "超时reload")
-            return "RETRY"
-
-        await page.wait_for_timeout(2000)
+        # ★ 页面禁止自动 reload（用户扫码确认期间绝不能刷新页面，
+        #   否则二维码换新会导致用户手机确认的旧码作废 → 登录失败）。
+        #   只有页面明确显示「二维码已过期/失效」才返回 RETRY 重试。
+        #   需要新码时由外部重启进程（重启=新页面新码）。
+        await page.wait_for_timeout(3000)
 
 
 async def main():
@@ -414,7 +409,7 @@ async def main():
             if login_result == "SUCCESS":
                 return
             print("⚠️ 验证未通过，重新获取二维码...", flush=True)
-            await page.wait_for_timeout(1000*300)
+            await page.wait_for_timeout(3000)
 
         await context.close()
         await browser.close()
