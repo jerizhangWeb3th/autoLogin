@@ -114,47 +114,30 @@ async def extract_qr(page) -> str:
     """
     stamp = ts()
     out = str(QR_DIR / f"douyin_qr_{stamp}.png")
-    # 0. ★ 等二维码 SVG 真正渲染完成
-    for _ in range(15):  # 最多等 15 秒
-        ready = await page.evaluate("""() => {
-            const guide = document.querySelector('#default_scan_code_guide');
-            if (guide && guide.querySelector('svg[viewBox="0 0 800 926"]')) {
-                const svg = guide.querySelector('svg');
-                const rect = svg.getBoundingClientRect();
-                return rect.width > 100 && rect.height > 100;
-            }
-            return false;
-        }""")
-        if ready:
-            break
-        await page.wait_for_timeout(1000)
-    # 0.5 ★ SVG 出现后再额外等 5 秒（引导动画 → 实际二维码过渡）
-    await page.wait_for_timeout(5000)
-    # 1. ★ 冻结 Lottie 动画（CSS 暂停 + SVG pauseAnimations），让二维码静止
+    # 等二维码渲染完成（Lottie 动画约需 15 秒）
+    await page.wait_for_timeout(15000)
+    # 冻结 Lottie 动画（CSS 暂停 + SVG pauseAnimations），让二维码静止
     try:
         await page.evaluate("""() => {
             const style = document.createElement('style');
             style.textContent = '*, *::before, *::after { animation-play-state: paused !important; transition: none !important; }';
             document.head.appendChild(style);
             document.querySelectorAll('svg').forEach(s => { try { s.pauseAnimations(); } catch(e) {} });
-            return true;
         }""")
         await page.wait_for_timeout(1500)
     except Exception as e:
         print(f"⚠️ 冻结动画失败: {str(e)[:50]}", flush=True)
-    # 2. 截图二维码容器（静态二维码），失败则等待重试（Lottie 渲染慢）
-    for _attempt in range(4):
-        try:
-            el = page.locator("#default_scan_code_guide")
-            if await el.count() > 0:
-                await el.screenshot(path=out, timeout=5000)
-                if os.path.getsize(out) > 5 * 1024:
-                    print(f"✅ 二维码(冻结动画截图): {out}", flush=True)
-                    return out
-        except Exception:
-            pass
-        await page.wait_for_timeout(3000)
-    # 2. 旧版：找 img data:image（仅 png/jpeg，跳过 svg+xml 避免损坏）
+    # 截图二维码容器（静态二维码）
+    try:
+        el = page.locator("#default_scan_code_guide")
+        if await el.count() > 0:
+            await el.screenshot(path=out, timeout=5000)
+            if os.path.getsize(out) > 5 * 1024:
+                print(f"✅ 二维码(冻结动画截图): {out}", flush=True)
+                return out
+    except Exception:
+        pass
+    # 旧版：找 img data:image（仅 png/jpeg，跳过 svg+xml 避免损坏）
     info = await page.evaluate("""() => {
         const scan = document.querySelector('#douyin_login_comp_scan_code');
         if (scan) {
