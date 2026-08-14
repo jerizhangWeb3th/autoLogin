@@ -272,7 +272,7 @@ async def click_face_verify(page) -> bool:
 async def extract_face_qr(page) -> str:
     """提取人脸验证二维码截图"""
     print("⏳ 等待人脸验证二维码出现...", flush=True)
-    await page.wait_for_timeout(5000)
+    await page.wait_for_timeout(15000)
     stamp = ts()
     out = str(QR_DIR / f"douyin_face_qr_{stamp}.png")
     info = await page.evaluate("""() => {
