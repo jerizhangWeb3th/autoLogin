@@ -270,16 +270,43 @@ async def click_face_verify(page) -> bool:
 
 
 async def extract_face_qr(page) -> str:
-    """提取人脸验证二维码截图"""
+    """提取人脸验证二维码截图（抖音新版：Lottie 动画渲染）"""
     print("⏳ 等待人脸验证二维码出现...", flush=True)
     await page.wait_for_timeout(15000)
     stamp = ts()
     out = str(QR_DIR / f"douyin_face_qr_{stamp}.png")
+    # 诊断：dump #uc-second-verify 里的二维码容器结构
+    containers = await page.evaluate("""() => {
+        const uc = document.querySelector('#uc-second-verify');
+        if (!uc) return [];
+        const out = [];
+        uc.querySelectorAll('svg, img, canvas, [id], [class*="qr"], [class*="scan"], [class*="code"], [class*="guide"]').forEach(el => {
+            const id = el.id || '';
+            const cls = (el.className && el.className.toString) ? el.className.toString() : '';
+            const vb = el.getAttribute ? (el.getAttribute('viewBox') || '') : '';
+            if (id || cls || vb) out.push({tag: el.tagName, id: id.slice(0,50), cls: cls.slice(0,50), vb: vb.slice(0,30)});
+        });
+        return out.slice(0, 25);
+    }""")
+    print(f"🔍 人脸验证容器结构: {containers}", flush=True)
+    # 截图整个 #uc-second-verify 容器（含人脸二维码）
+    try:
+        el = page.locator("#uc-second-verify")
+        if await el.count() > 0:
+            await el.screenshot(path=out, timeout=5000)
+            if os.path.getsize(out) > 5 * 1024:
+                print(f"✅ 人脸验证二维码(容器截图): {out}", flush=True)
+                write_latest(out)
+                write_state("FACE_QR_READY", out)
+                return out
+    except Exception:
+        pass
+    # fallback：找 img data:image（仅 png/jpeg，跳过 svg+xml）
     info = await page.evaluate("""() => {
         const imgs = document.querySelectorAll('img');
         for (const img of imgs) {
             const src = String(img.src || '');
-            if (src.startsWith('data:image') && img.getBoundingClientRect().width > 80) return src;
+            if ((src.startsWith('data:image/png') || src.startsWith('data:image/jpeg')) && img.getBoundingClientRect().width > 80) return src;
         }
         return '';
     }""")
@@ -290,7 +317,7 @@ async def extract_face_qr(page) -> str:
         print(f"✅ 人脸验证二维码(base64): {out}", flush=True)
     else:
         await page.screenshot(path=out, clip={"x": 570, "y": 180, "width": 300, "height": 300})
-        print(f"✅ 人脸验证二维码(截图): {out}", flush=True)
+        print(f"✅ 人脸验证二维码(裁剪): {out}", flush=True)
     write_latest(out)
     write_state("FACE_QR_READY", out)
     return out
@@ -348,8 +375,8 @@ async def wait_for_login(page, context, browser) -> str:
             if elapsed >= 10:
                 if await check_logged_in(page):
                     return await save_login_success(page, context, browser)
-                if elapsed >= 120:
-                    print("⚠️ 人脸验证超时，需要重新扫码", flush=True)
+                if elapsed >= 300:
+                    print("⚠️ 人脸验证超时(5分钟)，需要重新扫码", flush=True)
                     write_state("FACE_TIMEOUT", "人脸验证超时")
                     return "RETRY"
 
