@@ -333,7 +333,7 @@ async def wait_for_login(page, context, browser) -> str:
     face_qr_saved = False
     face_scan_wait_start = 0
     last_qr_hash = None
-    last_qr_check = time.monotonic()  # 初始化为当前时间，避免首次循环立即触发
+    last_qr_check = 0  # 首次循环立即提取二维码
 
     while True:
         if await check_logged_in(page):
