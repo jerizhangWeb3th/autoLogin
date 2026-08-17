@@ -327,83 +327,140 @@ async def extract_face_qr(page) -> str:
     return out
 
 
-async def wait_for_login(page, context, browser) -> str:
-    """等待登录完成，自动处理验证流程"""
+async def detect_face_verify(page) -> bool:
+    """检测是否出现 #uc-second-verify 二次校验（扫码后触发的验证方式选择）"""
+    try:
+        uc = page.locator("#uc-second-verify")
+        if await uc.count() > 0:
+            print("🔒 检测到 #uc-second-verify 二次校验!", flush=True)
+            return True
+    except Exception:
+        pass
+    return False
+
+
+async def detect_qr_expired(page) -> bool:
+    """检测二维码是否过期/失效"""
+    try:
+        return await page.evaluate("""() => {
+            const scan = document.querySelector('#douyin_login_comp_scan_code');
+            if (!scan) return false;
+            const text = scan.innerText || '';
+            return text.includes('二维码已过期') || text.includes('二维码失效') ||
+                   text.includes('验证失败') || text.includes('验证过期');
+        }""")
+    except Exception:
+        return False
+
+
+async def run_state_machine(browser, context, page) -> str:
+    """抖音登录状态机（单层循环，状态显式转换）
+
+    INIT ──▶ CHECK_COOKIE ──▶ OPEN_LOGIN ──▶ WAIT_QR ──▶ WAIT_SCAN ──▶ FACE_VERIFY ──▶ SUCCESS
+                                   │                                      │                │
+                                   └──────────────◀───────────────────────┘                ▼
+                                                                                        FAILED
+    INIT 在 main() 完成（launch 浏览器 + new_context + new_page + stealth 注入）。
+    """
+    state = "CHECK_COOKIE"
+    last_qr_hash = None
+    last_qr_check = 0          # 0 = 首次立即提取二维码
     face_clicked = False
     face_qr_saved = False
-    face_scan_wait_start = 0
-    last_qr_hash = None
-    last_qr_check = 0  # 首次循环立即提取二维码
+    face_scan_start = 0
 
-    while True:
-        if await check_logged_in(page):
-            return await save_login_success(page, context, browser)
+    while state not in ("SUCCESS", "FAILED"):
+        if state == "CHECK_COOKIE":
+            write_state("CHECK_COOKIE")
+            state = "SUCCESS" if await check_logged_in(page) else "OPEN_LOGIN"
 
-        # ★ 持续监控二维码刷新：抖音码约每 300 秒（5分钟）刷新一次，
-        #   检测到内容变化就自动提取保存（时间序列命名），保证最新
-        now = time.monotonic()
-        if now - last_qr_check >= 300:
-            last_qr_check = now
-            try:
-                new_qr = await extract_qr(page)
-                if new_qr and os.path.exists(new_qr):
-                    with open(new_qr, "rb") as f:
-                        h = hashlib.md5(f.read()).hexdigest()
-                    if h != last_qr_hash:
-                        last_qr_hash = h
-                        write_latest(new_qr)
-                        write_state("QR_READY", new_qr)
-                        print(f"🔄 二维码已刷新(新时间序列): {os.path.basename(new_qr)}", flush=True)
-                # ★ 无条件截图（每300秒都截最新的，保证发送时总有新鲜截图）
-                await save_page_shot(page)
-            except Exception as e:
-                print(f"⚠️ 二维码刷新检测失败: {str(e)[:60]}", flush=True)
+        elif state == "OPEN_LOGIN":
+            write_state("OPEN_LOGIN")
+            result = await goto_login(page)
+            if result == "ALREADY_LOGGED":
+                state = "SUCCESS"
+            elif result == "QR_READY":
+                # 重置子状态
+                last_qr_hash = None
+                last_qr_check = 0
+                face_clicked = False
+                face_qr_saved = False
+                face_scan_start = 0
+                state = "WAIT_QR"
+            else:
+                print("⚠️ 二维码未出现，3秒后重载", flush=True)
+                await page.wait_for_timeout(3000)
+                state = "OPEN_LOGIN"
 
-        try:
-            uc_verify =  page.locator("#uc-second-verify")
-            if await uc_verify.count() > 0:
-                print("🔒 检测到 #uc-second-verify 二次校验!", flush=True)
-                clicked = await click_face_verify(page)
-                face_clicked = True
-        except Exception:
-            pass
+        elif state == "WAIT_QR":
+            write_state("WAIT_QR")
+            qr_path = await extract_qr(page)
+            write_latest(qr_path)
+            write_state("QR_READY", qr_path)
+            state = "WAIT_SCAN"
 
-        if face_clicked and not face_qr_saved:
-            face_qr_path = await extract_face_qr(page)
-            face_qr_saved = True
-            face_scan_wait_start = time.monotonic()
-            print(f"📱 请用抖音 APP 扫描人脸验证二维码: {face_qr_path}", flush=True)
-
-        if face_qr_saved and face_scan_wait_start > 0:
-            elapsed = time.monotonic() - face_scan_wait_start
-            if elapsed >= 10:
-                if await check_logged_in(page):
-                    return await save_login_success(page, context, browser)
-                if elapsed >= 300:
-                    print("⚠️ 人脸验证超时(5分钟)，需要重新扫码", flush=True)
-                    write_state("FACE_TIMEOUT", "人脸验证超时")
-                    return "RETRY"
-
-        try:
-            expired = await page.evaluate("""() => {
-                const scan = document.querySelector('#douyin_login_comp_scan_code');
-                if (!scan) return false;
-                const text = scan.innerText || '';
-                return text.includes('二维码已过期') || text.includes('二维码失效') ||
-                       text.includes('验证失败') || text.includes('验证过期');
-            }""")
-            if expired:
-                print("⚠️ 二维码已过期或验证失败，需要重新扫码!", flush=True)
+        elif state == "WAIT_SCAN":
+            # 1. 已登录 → SUCCESS
+            if await check_logged_in(page):
+                state = "SUCCESS"
+                continue
+            # 2. 每 300 秒重新提取二维码（保持最新）
+            now = time.monotonic()
+            if now - last_qr_check >= 300:
+                last_qr_check = now
+                try:
+                    new_qr = await extract_qr(page)
+                    if new_qr and os.path.exists(new_qr):
+                        with open(new_qr, "rb") as f:
+                            h = hashlib.md5(f.read()).hexdigest()
+                        if h != last_qr_hash:
+                            last_qr_hash = h
+                            write_latest(new_qr)
+                            write_state("QR_READY", new_qr)
+                            print(f"🔄 二维码已刷新: {os.path.basename(new_qr)}", flush=True)
+                    await save_page_shot(page)
+                except Exception as e:
+                    print(f"⚠️ 二维码刷新失败: {str(e)[:60]}", flush=True)
+            # 3. 出现二次校验 → FACE_VERIFY
+            if await detect_face_verify(page):
+                state = "FACE_VERIFY"
+                continue
+            # 4. 二维码过期 → 重新打开登录页
+            if await detect_qr_expired(page):
+                print("⚠️ 二维码已过期或验证失败，重新扫码!", flush=True)
                 write_state("EXPIRED", "二维码过期")
-                return "RETRY"
-        except Exception:
-            pass
+                state = "OPEN_LOGIN"
+                continue
+            # ★ 页面禁止自动 reload（用户扫码确认期间绝不能刷新页面）
+            await page.wait_for_timeout(3000)
 
-        # ★ 页面禁止自动 reload（用户扫码确认期间绝不能刷新页面，
-        #   否则二维码换新会导致用户手机确认的旧码作废 → 登录失败）。
-        #   只有页面明确显示「二维码已过期/失效」才返回 RETRY 重试。
-        #   需要新码时由外部重启进程（重启=新页面新码）。
-        await page.wait_for_timeout(3000)
+        elif state == "FACE_VERIFY":
+            # 1. 首次点击「手机刷脸验证」
+            if not face_clicked:
+                face_clicked = await click_face_verify(page)
+            # 2. 首次提取人脸验证二维码
+            if face_clicked and not face_qr_saved:
+                face_qr_path = await extract_face_qr(page)
+                face_qr_saved = True
+                face_scan_start = time.monotonic()
+                print(f"📱 请扫码人脸验证二维码: {face_qr_path}", flush=True)
+            # 3. 等人脸扫码完成（10秒后开始检查，300秒超时）
+            if face_qr_saved:
+                elapsed = time.monotonic() - face_scan_start
+                if elapsed >= 10 and await check_logged_in(page):
+                    state = "SUCCESS"
+                    continue
+                if elapsed >= 300:
+                    print("⚠️ 人脸验证超时(5分钟)，重新扫码", flush=True)
+                    write_state("FACE_TIMEOUT", "人脸验证超时")
+                    state = "OPEN_LOGIN"
+                    continue
+            await page.wait_for_timeout(3000)
+
+    if state == "SUCCESS":
+        return await save_login_success(page, context, browser)
+    write_state("FAILED")
+    return "FAILED"
 
 
 async def main():
@@ -438,37 +495,20 @@ async def main():
         await context.add_init_script(STEALTH_SCRIPT)
         page = await context.new_page()
 
-        while True:
-            state = await goto_login(page)
-            if state == "ALREADY_LOGGED":
-                print("🎉 已登录！", flush=True)
-                await context.storage_state(path=str(ACCOUNT_FILE))
-                write_state("SUCCESS", str(ACCOUNT_FILE))
-                await context.close()
-                await browser.close()
-                return
-            if state != "QR_READY":
-                print("⚠️ 二维码未出现，重载", flush=True)
-                await page.wait_for_timeout(3000)
-                continue
+        # 状态机：INIT 在此完成（launch + context + page + stealth），
+        # 后续由 run_state_machine 显式状态转换驱动
+        result = await run_state_machine(browser, context, page)
+        print(f"登录流程结束: {result}", flush=True)
 
-            # qr_path = await extract_qr(page)
-            # write_latest(qr_path)
-            # write_state("QR_READY", qr_path)
-            # ★ 首次即截完整页面（含二维码）
-            # await save_page_shot(page)
-            # print(f"⏳ 等待扫码...（不自动 reload，避免打断登录确认）", flush=True)
-            # print(f"   📱 用抖音 APP 扫一扫二维码: {qr_path}", flush=True)
-            # print(f"   💡 提示: 扫码后请在手机上点「确认登录」", flush=True)
-            # await page.wait_for_timeout(300000)
-            login_result = await wait_for_login(page, context, browser)
-            if login_result == "SUCCESS":
-                return
-            print("⚠️ 验证未通过，重新获取二维码...", flush=True)
-            await page.wait_for_timeout(3000)
-
-        await context.close()
-        await browser.close()
+        # 兜底关闭（SUCCESS 时 save_login_success 已 close，这里 try 容错）
+        try:
+            await context.close()
+        except Exception:
+            pass
+        try:
+            await browser.close()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
