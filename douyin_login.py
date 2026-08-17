@@ -19,7 +19,6 @@ import os
 import sys
 import time
 import base64
-import hashlib
 from pathlib import Path
 
 BASE_DIR = Path(__file__).parent.resolve()
@@ -39,6 +38,7 @@ COOKIE_DIR.mkdir(exist_ok=True)
 
 ACCOUNT_FILE = COOKIE_DIR / "douyin_douyin_main.json"
 QR_LATEST_FILE = BASE_DIR / "qr_latest.txt"
+FACE_QR_LATEST_FILE = BASE_DIR / "face_qr_latest.txt"
 STATE_FILE = BASE_DIR / "login_state.txt"
 
 
@@ -53,52 +53,37 @@ def latest_qr() -> str:
     return str(files[0]) if files else ""
 
 
-def latest_page_shot() -> str:
-    """取页面截图中最新时间序列的一张"""
-    files = sorted(QR_DIR.glob("douyin_page_*.png"), key=lambda f: f.name, reverse=True)
-    return str(files[0]) if files else ""
-
-
-async def save_page_shot(page) -> str:
-    """截取登录卡区域（含二维码）+ 同步提取配对二维码，时间序列命名。
-
-    关键：先快速截图，再立即提取二维码（同时间戳配对），
-    避免截图慢导致内容滞后于二维码刷新。返回 (截图路径, 二维码路径)。
-    """
-    stamp = ts()
-    out = str(QR_DIR / f"douyin_page_{stamp}.png")
-    try:
-        # 1. 快速截图（viewport，不整页长图；登录卡优先）
-        shot_ok = False
-        try:
-            el = page.locator("#douyin_login_comp_scan_code")
-            if await el.count() > 0:
-                # 快速截图容器（timeout 短，避免等待太久滞后）
-                await el.screenshot(path=out, timeout=5000)
-                if os.path.getsize(out) > 10 * 1024:
-                    shot_ok = True
-        except Exception:
-            pass
-        if not shot_ok:
-            await page.screenshot(path=out, full_page=False)
-        print(f"📸 登录卡截图: {os.path.basename(out)}", flush=True)
-        return out
-    except Exception as e:
-        print(f"⚠️ 页面截图失败: {str(e)[:80]}", flush=True)
-        return ""
-
-
 def write_latest(path: str):
-    """写最新二维码路径 + 清理旧码"""
+    """写最新登录二维码路径 + 清理旧登录码（只动 douyin_qr_*.png，不影响人脸码）"""
     try:
         for old in QR_DIR.glob("douyin_qr_*.png"):
             if str(old) != path:
                 old.unlink(missing_ok=True)
-        print("🧹 已清除旧二维码文件", flush=True)
     except Exception:
         pass
     QR_LATEST_FILE.write_text(path)
     print(f"📡 最新二维码: {path}", flush=True)
+
+
+def write_face_latest(path: str):
+    """写最新人脸验证二维码路径 + 清理旧人脸码（只动 douyin_face_qr_*.png，不影响登录码）"""
+    try:
+        for old in QR_DIR.glob("douyin_face_qr_*.png"):
+            if str(old) != path:
+                old.unlink(missing_ok=True)
+    except Exception:
+        pass
+    FACE_QR_LATEST_FILE.write_text(path)
+    print(f"📡 最新人脸二维码: {path}", flush=True)
+
+
+def clean_qr_files():
+    """清空主登录二维码文件（刷新二维码时先删旧码，避免新旧共存）"""
+    for f in QR_DIR.glob("douyin_qr_*.png"):
+        try:
+            f.unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
 def write_state(state: str, payload: str = ""):
@@ -300,7 +285,7 @@ async def extract_face_qr(page) -> str:
             await el.screenshot(path=out, timeout=5000)
             if os.path.getsize(out) > 5 * 1024:
                 print(f"✅ 人脸验证二维码(容器截图): {out}", flush=True)
-                write_latest(out)
+                write_face_latest(out)
                 write_state("FACE_QR_READY", out)
                 return out
     except Exception:
@@ -322,7 +307,7 @@ async def extract_face_qr(page) -> str:
     else:
         await page.screenshot(path=out, clip={"x": 570, "y": 180, "width": 300, "height": 300})
         print(f"✅ 人脸验证二维码(裁剪): {out}", flush=True)
-    write_latest(out)
+    write_face_latest(out)
     write_state("FACE_QR_READY", out)
     return out
 
@@ -363,8 +348,7 @@ async def run_state_machine(browser, context, page) -> str:
     INIT 在 main() 完成（launch 浏览器 + new_context + new_page + stealth 注入）。
     """
     state = "CHECK_COOKIE"
-    last_qr_hash = None
-    last_qr_check = 0          # 0 = 首次立即提取二维码
+    qr_created_time = 0        # 二维码生成时间（0 = 未生成；5分钟生命周期）
     face_clicked = False
     face_qr_saved = False
     face_scan_start = 0
@@ -381,8 +365,7 @@ async def run_state_machine(browser, context, page) -> str:
                 state = "SUCCESS"
             elif result == "QR_READY":
                 # 重置子状态
-                last_qr_hash = None
-                last_qr_check = 0
+                qr_created_time = 0
                 face_clicked = False
                 face_qr_saved = False
                 face_scan_start = 0
@@ -397,41 +380,34 @@ async def run_state_machine(browser, context, page) -> str:
             qr_path = await extract_qr(page)
             write_latest(qr_path)
             write_state("QR_READY", qr_path)
+            qr_created_time = time.monotonic()   # 记录二维码生成时间
             state = "WAIT_SCAN"
 
         elif state == "WAIT_SCAN":
-            # 1. 已登录 → SUCCESS
+            # 1. 登录成功 → SUCCESS
             if await check_logged_in(page):
                 state = "SUCCESS"
                 continue
-            # 2. 每 300 秒重新提取二维码（保持最新）
-            now = time.monotonic()
-            if now - last_qr_check >= 300:
-                last_qr_check = now
-                try:
-                    new_qr = await extract_qr(page)
-                    if new_qr and os.path.exists(new_qr):
-                        with open(new_qr, "rb") as f:
-                            h = hashlib.md5(f.read()).hexdigest()
-                        if h != last_qr_hash:
-                            last_qr_hash = h
-                            write_latest(new_qr)
-                            write_state("QR_READY", new_qr)
-                            print(f"🔄 二维码已刷新: {os.path.basename(new_qr)}", flush=True)
-                    await save_page_shot(page)
-                except Exception as e:
-                    print(f"⚠️ 二维码刷新失败: {str(e)[:60]}", flush=True)
-            # 3. 出现二次校验 → FACE_VERIFY
+            # 2. 出现二次校验 → FACE_VERIFY
             if await detect_face_verify(page):
                 state = "FACE_VERIFY"
                 continue
-            # 4. 二维码过期 → 重新打开登录页
+            # 3. 二维码失效 → 重新打开登录页
             if await detect_qr_expired(page):
-                print("⚠️ 二维码已过期或验证失败，重新扫码!", flush=True)
+                print("⚠️ 二维码失效，重新生成", flush=True)
                 write_state("EXPIRED", "二维码过期")
                 state = "OPEN_LOGIN"
                 continue
-            # ★ 页面禁止自动 reload（用户扫码确认期间绝不能刷新页面）
+            # 4. 二维码超过 5 分钟 → 先删旧码，再生成新码（避免新旧共存）
+            if qr_created_time and time.monotonic() - qr_created_time >= 300:
+                print("🔄 二维码超过5分钟，刷新", flush=True)
+                clean_qr_files()                     # 先删除旧二维码
+                await page.wait_for_timeout(3000)    # 等页面生成新二维码
+                qr_path = await extract_qr(page)     # 截图新二维码
+                write_latest(qr_path)
+                write_state("QR_REFRESH", qr_path)
+                qr_created_time = time.monotonic()   # 重置生命周期
+            # 每 3 秒检查一次状态（扫码等待期间不主动截图）
             await page.wait_for_timeout(3000)
 
         elif state == "FACE_VERIFY":
