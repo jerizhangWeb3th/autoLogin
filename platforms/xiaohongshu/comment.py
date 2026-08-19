@@ -17,18 +17,20 @@
 """
 import os, sys, asyncio, json, random, argparse
 
-sys.path.insert(0, "/root/autoLogin")
-sys.path.insert(0, "/root/autoLogin")
 os.environ["DISPLAY"] = ":99"
+
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent.parent))
 
 import config  # noqa: E402
 config.ensure_display()
 config.ensure_sau_importable()
 
 from patchright.async_api import async_playwright  # noqa: E402
-from stealth_core import MAC_UA, STEALTH_SCRIPT, LAUNCH_ARGS  # noqa: E402
+from core.stealth import MAC_UA, STEALTH_SCRIPT, LAUNCH_ARGS  # noqa: E402
 
-import human_behavior as hb  # noqa: E402
+from core import human_behavior as hb  # noqa: E402
 
 sys.path.insert(0, "/root/.hermes/scripts")
 try:

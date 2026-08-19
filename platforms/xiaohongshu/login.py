@@ -17,7 +17,7 @@ import time
 import base64
 from pathlib import Path
 
-BASE_DIR = Path(__file__).parent.resolve()
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 # patchright（sau 安装目录）
@@ -25,7 +25,7 @@ _sau = str(Path.home() / ".local/share/uv/tools/social-auto-upload/lib/python3.1
 if _sau not in sys.path:
     sys.path.insert(0, _sau)
 
-from stealth_core import MAC_UA, LAUNCH_ARGS, STEALTH_SCRIPT, find_chrome, ensure_display, goto_with_stealth  # noqa: E402
+from core.stealth import MAC_UA, LAUNCH_ARGS, STEALTH_SCRIPT, find_chrome, ensure_display, goto_with_stealth  # noqa: E402
 
 QR_DIR = BASE_DIR / "qr"
 COOKIE_DIR = BASE_DIR / "cookies"

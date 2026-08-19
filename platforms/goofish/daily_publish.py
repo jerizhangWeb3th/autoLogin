@@ -11,7 +11,7 @@ import json
 import datetime
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 # 每日轮换内容（星期几 → 主题）
 DAILY_CONTENT = {

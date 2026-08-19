@@ -1,7 +1,7 @@
 """抓取推荐流帖子标题+URL（供选题和评论参考）"""
 import os, sys, asyncio, json
 
-sys.path.insert(0, "/root/autoLogin")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 os.environ["DISPLAY"] = ":99"
 
 import config  # noqa: E402

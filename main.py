@@ -1,42 +1,37 @@
+"""中国平台自动化运营 — 统一入口
+
+分层架构：
+    core/        匿名性 + 真人行为（平台无关基础）
+    platforms/   各平台业务（登录 / 发布 / 评论 / 推荐流）
+    scripts/     独立脚本（选题抓取等）
+
+用法：
+    python main.py douyin        # 抖音登录
+    python main.py xiaohongshu   # 小红书登录
+    python main.py goofish       # 闲鱼登录
+
+设计原则：
+    1. 匿名性（core/stealth）与真人行为（core/human_behavior）单独拎出，是唯二优化点
+    2. 各平台业务独立成包，互不影响、各自演进
+    3. 登录/发布/评论等脚本也可直接运行（不依赖 main.py）
 """
-中国平台登录大项目 — 统一入口
-
-【架构】
-    autoLogin/
-    ├── stealth_core.py          # ★ 浏览器匿名性核心（独立优化点）
-    ├── douyin_login.py          # 抖音登录模块
-    ├── xiaohongshu_login.py     # 小红书登录模块
-    ├── goofish_login.py         # 闲鱼登录模块
-    ├── goofish_publish.py       # 闲鱼发布模块
-    ├── verify_stealth.py        # 匿名性验证脚本
-    └── tools/                   # 二维码/发码工具
-
-【设计原则】
-1. 浏览器匿名性（stealth_core.py）单独拎出 —— 匿名性不足只改这一个文件
-2. 各平台登录是独立操作流程，互不影响
-3. 跨平台：Windows / macOS / Linux 自动适配
-"""
-
 import argparse
 import asyncio
-import sys
+
+LOGIN_MODULES = {
+    "douyin": "platforms.douyin.login",
+    "xiaohongshu": "platforms.xiaohongshu.login",
+    "goofish": "platforms.goofish.login",
+}
 
 
 def main():
-    parser = argparse.ArgumentParser(description="中国平台登录")
-    parser.add_argument("platform", choices=["douyin", "xiaohongshu", "goofish"],
-                        help="要登录的平台")
+    parser = argparse.ArgumentParser(description="中国平台自动化运营")
+    parser.add_argument("platform", choices=list(LOGIN_MODULES.keys()), help="要登录的平台")
     args = parser.parse_args()
 
-    if args.platform == "douyin":
-        from douyin_login import main as douyin_main
-        asyncio.run(douyin_main())
-    elif args.platform == "xiaohongshu":
-        from xiaohongshu_login import main as xhs_main
-        asyncio.run(xhs_main())
-    elif args.platform == "goofish":
-        from goofish_login import main as goofish_main
-        asyncio.run(goofish_main())
+    mod = __import__(LOGIN_MODULES[args.platform], fromlist=["main"])
+    asyncio.run(mod.main())
 
 
 if __name__ == "__main__":

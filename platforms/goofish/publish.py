@@ -16,7 +16,7 @@
 import sys, os, json, argparse, random
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 SITE_PKG = Path.home() / ".local/share/uv/tools/goofish-cli/lib/python3.11/site-packages"
 if str(SITE_PKG) not in sys.path:
