@@ -75,20 +75,32 @@ async def list_feeds(count=10, cookie_path=DEFAULT_COOKIE):
         page = await context.new_page()
 
         await page.goto(XHS_HOME, wait_until="domcontentloaded", timeout=60000)
-        # 等待 __INITIAL_STATE__.feed.feeds 数据
-        data = None
+        # 等待 .note-item 卡片出现（小红书改版后 __INITIAL_STATE__ 已失效，改从 DOM 提取）
         for _ in range(20):
-            data = await eval_js(page, """() => {
-                const s = window.__INITIAL_STATE__;
-                return s?.feed?.feeds ?? null;
-            }""", retries=1)
-            if data:
+            cnt = await eval_js(page, "() => document.querySelectorAll('.note-item').length", retries=1)
+            if cnt and cnt > 0:
                 break
             await asyncio.sleep(1)
 
-        feeds = parse_feed_list(data) if data else []
+        # 从 DOM 提取 feed 卡片（.note-item 里的 explore 链接含 feedId + xsecToken）
+        feeds = await eval_js(page, """() => {
+            const cards = document.querySelectorAll('.note-item');
+            const feeds = [];
+            cards.forEach(card => {
+                const link = card.querySelector('a[href*="xsec_token"]') || card.querySelector('a[href*="/explore/"]');
+                if (!link) return;
+                const m = link.href.match(/\\/explore\\/([a-f0-9]{24})/i);
+                if (!m) return;
+                const tm = link.href.match(/xsec_token=([^&]+)/);
+                feeds.push({
+                    id: m[1],
+                    xsecToken: tm ? decodeURIComponent(tm[1]) : '',
+                });
+            });
+            return feeds;
+        }""")
         await browser.close()
-        return feeds[:count]
+        return (feeds or [])[:count]
 
 
 async def post_comment(feed_id, xsec_token, content, cookie_path=DEFAULT_COOKIE):
