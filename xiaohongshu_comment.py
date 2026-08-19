@@ -28,7 +28,7 @@ if _sau not in sys.path:
 from stealth_core import MAC_UA, LAUNCH_ARGS, STEALTH_SCRIPT, find_chrome, ensure_display  # noqa: E402
 
 XHS_HOME = "https://www.xiaohongshu.com"
-DEFAULT_COOKIE = str(Path.home() / ".local/share/uv/tools/social-auto-upload/lib/python3.11/site-packages/cookies/xiaohongshu_autoContent.json")
+DEFAULT_COOKIE = str(BASE_DIR / "cookies" / "xiaohongshu_hermes.json")
 
 
 async def eval_js(page, script, retries=3):
@@ -122,19 +122,18 @@ async def post_comment(feed_id, xsec_token, content, cookie_path=DEFAULT_COOKIE)
         await page.goto(url, wait_until="domcontentloaded", timeout=60000)
         await asyncio.sleep(3)
 
-        # 滚动到评论区触发渲染
+        # 滚动到评论区触发渲染（改版后用 window.scrollTo 滚动到底部）
         await eval_js(page, """() => {
-            const area = document.querySelector('.comments-container, .note-scroller, #noteContainer');
-            if (area) area.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            window.scrollTo(0, document.body.scrollHeight);
         }""")
-        await asyncio.sleep(1)
+        await asyncio.sleep(3)
 
         # 等待评论输入框出现
         ready = False
         for _ in range(20):
             found = await eval_js(page, """() => {
-                if (document.querySelector('div.input-box div.content-edit p.content-input')) return 2;
-                if (document.querySelector('div.input-box div.content-edit span')) return 2;
+                if (document.querySelector('p.content-input')) return 2;
+                if (document.querySelector('[class*="content-input"]')) return 2;
                 if (document.querySelector('#noteContainer, .note-container, .note-scroller, .comments-container')) return 1;
                 return 0;
             }""")
@@ -147,14 +146,10 @@ async def post_comment(feed_id, xsec_token, content, cookie_path=DEFAULT_COOKIE)
             await browser.close()
             return {"success": False, "message": "评论输入框未出现"}
 
-        # 点击评论输入框激活
+        # 聚焦评论输入框（DOM 层 focus，不经过点击，避免遮罩拦截）
         clicked = await eval_js(page, """() => {
-            const p = document.querySelector('div.input-box div.content-edit p.content-input');
-            if (p) { p.click(); return true; }
-            const span = document.querySelector('div.input-box div.content-edit span');
-            if (span) { span.click(); return true; }
-            const box = document.querySelector('div.input-box');
-            if (box) { box.click(); return true; }
+            const p = document.querySelector('p.content-input') || document.querySelector('[class*="content-input"]');
+            if (p) { p.focus(); return true; }
             return false;
         }""")
         if not clicked:
@@ -165,7 +160,7 @@ async def post_comment(feed_id, xsec_token, content, cookie_path=DEFAULT_COOKIE)
         # 逐字输入评论（模拟人类打字）
         escaped = json.dumps(content, ensure_ascii=False)
         await eval_js(page, f"""() => {{
-            const p = document.querySelector('div.input-box div.content-edit p.content-input');
+            const p = document.querySelector('p.content-input') || document.querySelector('[class*="content-input"]');
             if (!p) return false;
             p.focus();
             const text = {escaped};
@@ -176,19 +171,29 @@ async def post_comment(feed_id, xsec_token, content, cookie_path=DEFAULT_COOKIE)
         }}""")
         await asyncio.sleep(random.uniform(1, 3))
 
-        # 提交
+        # 提交（精确匹配「发送」按钮，排除「登录」按钮）
         submitted = await eval_js(page, """() => {
-            const btn = document.querySelector('div.bottom button.submit');
-            if (btn && !btn.disabled) { btn.click(); return true; }
+            const btns = Array.from(document.querySelectorAll('button'));
+            const send = btns.find(b => b.textContent.trim() === '发送' || b.textContent.trim() === '评论');
+            if (send && !send.disabled) { send.click(); return true; }
             return false;
         }""")
         if not submitted:
             await browser.close()
             return {"success": False, "message": "未找到提交按钮"}
 
-        await asyncio.sleep(random.uniform(2, 4))
+        await asyncio.sleep(3)
+
+        # 验证：评论提交成功后输入框会清空
+        cleared = await eval_js(page, """() => {
+            const p = document.querySelector('p.content-input');
+            return !p || !p.textContent || p.textContent.trim() === '';
+        }""")
         await browser.close()
-        return {"success": True, "message": "评论发表成功"}
+        if cleared:
+            return {"success": True, "message": "评论发表成功"}
+        else:
+            return {"success": False, "message": "评论未确认发出（输入框未清空）"}
 
 
 def main():
