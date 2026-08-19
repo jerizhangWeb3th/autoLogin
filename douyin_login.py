@@ -261,33 +261,52 @@ async def click_face_verify(page) -> bool:
 async def extract_face_qr(page) -> str:
     """提取人脸验证二维码截图（抖音新版：Lottie 动画渲染）"""
     print("⏳ 等待人脸验证二维码出现...", flush=True)
-    await page.wait_for_timeout(15000)
+    await page.wait_for_timeout(20000)
     stamp = ts()
     out = str(QR_DIR / f"douyin_face_qr_{stamp}.png")
-    # 诊断：dump #uc-second-verify 里的二维码容器结构
-    containers = await page.evaluate("""() => {
+    # 诊断：dump #uc-second-verify 里所有 img/svg/大容器（含尺寸和位置）
+    structure = await page.evaluate("""() => {
         const uc = document.querySelector('#uc-second-verify');
-        if (!uc) return [];
-        const out = [];
-        uc.querySelectorAll('svg, img, canvas, [id], [class*="qr"], [class*="scan"], [class*="code"], [class*="guide"]').forEach(el => {
-            const id = el.id || '';
-            const cls = (el.className && el.className.toString) ? el.className.toString() : '';
-            const vb = el.getAttribute ? (el.getAttribute('viewBox') || '') : '';
-            if (id || cls || vb) out.push({tag: el.tagName, id: id.slice(0,50), cls: cls.slice(0,50), vb: vb.slice(0,30)});
+        if (!uc) return {found: false};
+        const r = {imgs: [], svgs: [], bigContainers: []};
+        uc.querySelectorAll('img').forEach(img => {
+            const b = img.getBoundingClientRect();
+            r.imgs.push({src: String(img.src||'').slice(0,50), w: Math.round(b.width), h: Math.round(b.height)});
         });
-        return out.slice(0, 25);
+        uc.querySelectorAll('svg').forEach(svg => {
+            const b = svg.getBoundingClientRect();
+            r.svgs.push({vb: (svg.getAttribute('viewBox')||'').slice(0,30), w: Math.round(b.width), h: Math.round(b.height)});
+        });
+        uc.querySelectorAll('*').forEach(el => {
+            const b = el.getBoundingClientRect();
+            if (b.width > 120 && b.height > 120) {
+                const cls = (el.className && el.className.toString) ? el.className.toString() : '';
+                r.bigContainers.push({tag: el.tagName, id: (el.id||'').slice(0,40), cls: cls.slice(0,40), w: Math.round(b.width), h: Math.round(b.height)});
+            }
+        });
+        return r;
     }""")
-    print(f"🔍 人脸验证容器结构: {containers}", flush=True)
-    # 截图整个 #uc-second-verify 容器（含人脸二维码）
+    print(f"🔍 人脸验证结构: imgs={structure.get('imgs')}", flush=True)
+    print(f"🔍 svgs={structure.get('svgs')}", flush=True)
+    print(f"🔍 大容器={structure.get('bigContainers')}", flush=True)
+    # 截图整个人脸验证界面（#uc-second-verify 容器，含二维码 + 说明）
     try:
         el = page.locator("#uc-second-verify")
         if await el.count() > 0:
             await el.screenshot(path=out, timeout=5000)
-            if os.path.getsize(out) > 5 * 1024:
-                print(f"✅ 人脸验证二维码(容器截图): {out}", flush=True)
-                write_face_latest(out)
-                write_state("FACE_QR_READY", out)
-                return out
+            print(f"✅ 人脸验证界面(容器截图): {out} ({os.path.getsize(out)//1024}KB)", flush=True)
+            write_face_latest(out)
+            write_state("FACE_QR_READY", out)
+            return out
+    except Exception:
+        pass
+    # 兜底：截图整个页面
+    try:
+        await page.screenshot(path=out, full_page=False)
+        print(f"✅ 人脸验证界面(整页截图): {out} ({os.path.getsize(out)//1024}KB)", flush=True)
+        write_face_latest(out)
+        write_state("FACE_QR_READY", out)
+        return out
     except Exception:
         pass
     # fallback：找 img data:image（仅 png/jpeg，跳过 svg+xml）
