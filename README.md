@@ -34,8 +34,11 @@ autoLogin/
 │   ├── xiaohongshu/
 │   │   ├── login.py             # 登录（状态机 + 二次认证）
 │   │   ├── publish.py           # 合规发布 v2
-│   │   ├── comment.py           # 合规评论 v1
-│   │   └── feed.py              # 推荐流抓取
+│   │   ├── comment.py           # 合规评论 v1（多 selector 兜底）
+│   │   ├── feed.py              # 推荐流抓取
+│   │   ├── sign.py              # x-s/x-t 签名（API 直发，execjs + crypto-js）
+│   │   ├── selectors.py         # selector 候选库（改版集中更新）
+│   │   └── static/              # 签名 JS（xhs_creator/main/rap）
 │   ├── douyin/
 │   │   ├── login.py             # 登录模块
 │   │   └── publish.py           # 图文发布
@@ -72,6 +75,17 @@ autoLogin/
   赶在页面脚本执行前完成伪装（绕过 patchright add_init_script bug + 抖音 CSP）。
 - **检测覆盖**：webdriver / CDP 残留 / Chrome 对象 / Navigator / UA-CH / WebGL /
   Canvas / Audio / 权限 / 媒体 / Battery / 网络 / Performance 等 70+ 检测点。
+
+## 签名方案（platforms/xiaohongshu/sign）
+
+合并自 creatorhub 的小红书 x-s/x-t 签名（execjs + Node + crypto-js），可 API 直发
+（评论/发布/搜索），不依赖浏览器前端，改版时更新 `static/*.js` 即可。
+
+- `generate_xs_xs_common(a1, api, data)` → x-s / x-t / x-s-common（创作者签名）
+- `generate_xsc_main(a1, api, data, method)` → 网页主签名（www/edith 带参 GET）
+- `cos_signature(...)` → 上传文件 COS 签名（HMAC-SHA1，纯 Python）
+
+依赖：`pip install PyExecJS` + `npm install crypto-js`（项目根目录 node_modules）。
 
 ## 两层登录模型（小红书）
 

@@ -8,6 +8,8 @@ venv/
 # 敏感文件（cookie / 凭据）
 *.json
 !requirements.txt
+!package.json
+!package-lock.json
 *.key
 *.pem
 profile/
@@ -25,3 +27,4 @@ qr_latest.txt
 
 # 系统
 .DS_Store
+node_modules/

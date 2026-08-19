@@ -31,6 +31,7 @@ from patchright.async_api import async_playwright  # noqa: E402
 from core.stealth import MAC_UA, STEALTH_SCRIPT, LAUNCH_ARGS  # noqa: E402
 
 from core import human_behavior as hb  # noqa: E402
+from platforms.xiaohongshu.selectors import find_visible  # noqa: E402
 
 sys.path.insert(0, "/root/.hermes/scripts")
 try:
@@ -113,16 +114,14 @@ async def comment_on(page, url, comment, post_results, before_count):
     except Exception:
         pass
 
-    # 聚焦评论框（JS 方式，避免占位符拦截）
-    focused = await safe_eval(page, """() => {
-        const input = document.querySelector('[contenteditable="true"], #content-textarea');
-        if (input) { input.focus(); input.click(); return true; }
-        return false;
-    }""", retries=1)
-    if focused is not True:
-        clicked = await hb.human_click(page, '[contenteditable="true"]')
-        if not clicked:
-            return {"ok": False, "reason": "无评论框"}
+    # 聚焦评论框（多 selector 兜底，小红书改版后自动适配）
+    input_locator, _ = await find_visible(page, "comment.editor")
+    if input_locator is None:
+        return {"ok": False, "reason": "无评论框"}
+    try:
+        await input_locator.first.click()
+    except Exception:
+        pass
 
     await hb.between_actions()
 
@@ -133,15 +132,11 @@ async def comment_on(page, url, comment, post_results, before_count):
 
     await asyncio.sleep(random.uniform(1.5, 3.5))
 
-    # 点击发送（精确找「发送」按钮，避免点到「登录」）
-    sent = await safe_eval(page, """() => {
-        const btns = Array.from(document.querySelectorAll('button'));
-        const send = btns.find(b => { const t = (b.innerText || b.textContent || '').trim(); return t === '发送' || t === '评论'; });
-        if (send && !send.disabled) { send.click(); return true; }
-        return false;
-    }""", retries=1)
-    if sent is not True:
+    # 点击发送（多 selector 兜底，避免点到「登录」）
+    send_locator, _ = await find_visible(page, "comment.submit", require_enabled=True)
+    if send_locator is None:
         return {"ok": False, "reason": "无发送按钮"}
+    await send_locator.first.click()
 
     # 等待 API 确认
     api_ok = False
