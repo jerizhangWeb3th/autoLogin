@@ -40,7 +40,7 @@ except Exception:
     filter_content = None
 
 COOKIE = "/root/autoLogin/cookies/xiaohongshu_hermes.json"
-MAX_COMMENTS = 3  # 单次最多 3 条（安全上限）
+MAX_COMMENTS = 5  # 单次最多 5 条（安全上限，全天建议 ≤5 条）
 
 
 async def safe_eval(page, script, retries=3, delay=4):
