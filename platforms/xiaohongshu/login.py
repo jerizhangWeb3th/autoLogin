@@ -39,8 +39,8 @@ ACCOUNT_FILE = COOKIE_DIR / "xiaohongshu_hermes.json"
 STATE_FILE = BASE_DIR / "login_state.txt"
 QR_LATEST_FILE = BASE_DIR / "qr_latest.txt"
 
-# 二维码有效期（秒）：小红书二维码约 2 分钟失效，留出用户扫码+确认时间
-QR_TTL = 150
+# 二维码有效期（秒）：小红书二维码约 2 分钟失效，但二次人脸验证需要更长时间，拉长到 5 分钟
+QR_TTL = 300
 
 
 def ts() -> str:
