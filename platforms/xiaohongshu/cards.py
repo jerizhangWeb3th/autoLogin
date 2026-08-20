@@ -4,10 +4,11 @@
     主标题  ≥96px  |  副标题 48-56px  |  卡片标题 36-42px  |  正文 26-30px  |  标签 24-26px
     Golden rule: If in doubt, make it bigger. Tiny text = skipped post.
 
-【三风格】（随机选，无需人工确认）：
+【四风格】（随机选，无需人工确认）：
     classic   米白杂志标准  #f5f3ed / #1a1a1a / #8b5e3c
     magazine  精致编辑     交替行背景 + 装饰引号 + 更紧凑 padding
     artistic  实验暗色     #0A0615 / #FFFFFF / #C77DFF，三字体混合
+    morandi   莫兰迪柔和   #f5ece6 / #3d3a38 / #b08d8d，圆角卡片
 
 用法：
     from platforms.xiaohongshu.cards import generate_cards
@@ -22,28 +23,32 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 FONT_KAI = str(_PROJECT_ROOT / "assets" / "fonts" / "TsangerJinKai02-W04.ttf")
 FONT_NOTO = str(_PROJECT_ROOT / "assets" / "fonts" / "NotoSerifSC-Regular.ttf")
 
-# ── 字号规范（skill 硬规则）──
+# ── 字号规范（skill 硬规则，已按用户反馈放大一档）──
 FONT_SIZES = {
-    "title": 96,       # 主标题（封面大字）
-    "subtitle": 52,    # 副标题
-    "head": 42,        # 卡片标题
-    "body": 28,        # 正文
-    "tag": 36,         # 标签
+    "title": 128,      # 主标题（封面大字，短词）
+    "subtitle": 64,    # 副标题
+    "head": 52,        # 卡片标题
+    "body": 38,        # 正文
+    "tag": 42,         # 标签
 }
 
 # ── 三风格配色 ──
 STYLES = {
     "classic": {
         "bg": "#f5f3ed", "text": "#1a1a1a", "accent": "#8b5e3c",
-        "title_size": 88, "padding": "88px 76px",
+        "title_size": 120, "padding": "88px 76px",
     },
     "magazine": {
         "bg": "#f5f3ed", "text": "#1a1a1a", "accent": "#8b5e3c",
-        "title_size": 88, "padding": "44px 42px",
+        "title_size": 120, "padding": "44px 42px",
     },
     "artistic": {
         "bg": "#0A0615", "text": "#FFFFFF", "accent": "#C77DFF",
-        "title_size": 96, "padding": "88px 76px",
+        "title_size": 128, "padding": "88px 76px",
+    },
+    "morandi": {
+        "bg": "#f5ece6", "text": "#3d3a38", "accent": "#b08d8d",
+        "title_size": 120, "padding": "88px 76px",
     },
 }
 
@@ -77,10 +82,12 @@ def build_html(card: dict, idx: int, style: str) -> str:
     else:
         items_html = ""
         for i, item in enumerate(card.get("items", [])):
-            # magazine 风格：交替行背景
+            # magazine 交替行背景 + morandi 圆角卡片
             alt = ""
             if style == "magazine" and i % 2 == 1:
                 alt = " style='background:rgba(0,0,0,0.035);border-radius:12px;padding:24px 16px;'"
+            elif style == "morandi":
+                alt = " style='background:rgba(176,141,141,0.12);border-radius:16px;padding:24px 20px;margin-bottom:16px;'"
             items_html += f'<div class="item"{alt}>{item}</div>'
         body = f'''
         <div class="list-card">
@@ -88,10 +95,12 @@ def build_html(card: dict, idx: int, style: str) -> str:
           {items_html}
         </div>'''
 
-    # artistic 风格：暗色渐变 + 圆角卡片
+    # 各风格特殊背景
     bg_css = bg
     if style == "artistic":
         bg_css = f"linear-gradient(160deg, {bg} 0%, #160d2e 100%)"
+    elif style == "morandi":
+        bg_css = f"linear-gradient(160deg, {bg} 0%, #e8dcd2 100%)"
     item_border = "1px solid rgba(199,125,255,0.18)" if style == "artistic" else "1px solid rgba(0,0,0,0.08)"
 
     return f'''<!DOCTYPE html>

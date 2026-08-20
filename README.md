@@ -96,18 +96,22 @@ autoLogin/
 
 | 层级 | 字号 |
 |:---|:---|
-| 主标题 | 96px |
-| 副标题 | 52px |
-| 卡片标题 | 42px |
-| 正文 | 28px |
-| 标签 | 36px |
+| 主标题 | 128px |
+| 副标题 | 64px |
+| 卡片标题 | 52px |
+| 正文 | 38px |
+| 标签 | 42px |
 
 Golden rule：**If in doubt, make it bigger.** 小字 = 被划走的笔记。
 
-**三风格**（随机选，无需确认）：
+**四风格**（随机选，无需确认）：
 - `classic` — 米白杂志标准（#f5f3ed / #1a1a1a / #8b5e3c）
 - `magazine` — 精致编辑（交替行背景 + 圆角）
 - `artistic` — 实验暗色（#0A0615 / #C77DFF 紫 accent）
+- `morandi` — 莫兰迪柔和（#f5ece6 / #3d3a38 / #b08d8d，圆角卡片）
+
+另有 **AI 生成类风格**（baoyu-infographic 21 布局×21 风格 + baoyu-comic 6 风格×7 色调），
+依赖 `image_generate` 工具（当前环境不可用），定义见 `references/card-styles.md`。
 
 用法：
 ```python
