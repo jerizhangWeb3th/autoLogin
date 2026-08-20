@@ -1,147 +1,352 @@
-# 中国平台自动化运营项目（抖音 · 小红书 · 闲鱼）
+# social-auto-upload
 
-三平台自动化运营统一项目。基于 **Patchright + 真 Chrome + stealth 匿名性核心 + human_behavior 真人行为**，
-覆盖登录、发布、评论、选题全流程，分层架构，各平台独立演进。
+`social-auto-upload` 是一个强大的自动化工具，旨在帮助内容创作者和运营者高效地将视频内容一键发布到多个国内外主流社交媒体平台。
+项目实现了对 `抖音`、`Bilibili`、`小红书`、`快手`、`视频号`、`百家号`、`支付宝生活号`、`微博`、`虎扑`、`TikTok` 以及 `YouTube` 等平台的视频上传、定时发布等功能。
+结合各平台 `uploader` 模块，您可以轻松配置和扩展支持的平台，并通过示例脚本快速上手。
 
-## 功能总览
+<img src="media/show/tkupload.gif" alt="tiktok show" width="800"/>
 
-| 平台 | 功能 | 命令 | 说明 |
-|:-----|:-----|:-----|:-----|
-| 抖音 | 登录 | `python main.py douyin` | 创作者中心扫码登录（含刷脸二次验证）|
-| 抖音 | 图文发布 | `python platforms/douyin/publish.py` | patchright + 真 Chrome 图文发布 |
-| 小红书 | 登录 | `python main.py xiaohongshu` | 扫码登录 → 保存 cookie |
-| 小红书 | 发布 | `python platforms/xiaohongshu/publish.py <图> --title ... --auto --ai-label` | 合规发布（AI 标识 + 原创声明 + 真人化节奏）|
-| 小红书 | 评论 | `python platforms/xiaohongshu/comment.py <文件> --auto` | 合规评论（低频 + 真人化 + 内容过滤）|
-| 小红书 | 推荐流 | `python platforms/xiaohongshu/feed.py` | 抓取推荐流（选题/评论参考）|
-| 闲鱼 | 登录 | `python main.py goofish` | 扫码登录 → 人脸识别二次扫码 |
-| 闲鱼 | 发布 | `python platforms/goofish/publish.py` | 发布商品（mtop 发布）|
-| 闲鱼 | 每日发布 | `python platforms/goofish/daily_publish.py` | 按星期轮换主题 + 卡片生成 |
-| 选题 | GitHub 抓取 | `python scripts/fetch_github_ai_projects.py` | 高 star AI 项目（小红书选题）|
+## 💎 赞助商
 
-## 项目结构（分层架构）
+<table width="100%">
+ <tr>
+    <td width="25%" align="center" valign="middle">
+      <a href="https://chilltion.com/?ref=1y5k5k">
+        <img src="static/DolOffer.png" alt="DolOffer Sponsor" width="180">
+      </a>
+    </td>
+    <td width="75%" align="left" valign="middle">
+      感谢 <a href="https://doloffer.com/" target="_blank">DolOffer</a> 对本项目的支持！对于做内容矩阵、多平台分发和 AI 自动化运营的创作者来说，ChatGPT、Claude、YouTube Premium、Spotify、Apple Music、Notion、Office 等数字工具往往是长期成本。DolOffer 提供 AI、视频、音乐和效率工具相关的订阅与充值服务，帮助用户更低成本地配置常用数字产品。更多说明可查看 <a href="https://github.com/Doloffer-g/guide" target="_blank">DolOffer Guide</a>。使用优惠码 <code>AI8888</code> 可额外享受 9 折优惠，具体价格和服务规则以官网为准。  
+    </td>
+  </tr>
+  <tr>
+    <td width="25%" align="center" valign="middle">
+      <a href="https://chilltion.com/?ref=1y5k5k">
+        <img src="static/chilltion.png" alt="chilltion Sponsor" width="180">
+      </a>
+    </td>
+    <td width="75%" align="left" valign="middle">
+      轻视AI：一句话生产MG动画，适合知识，科普，讲解，教程，介绍等类型视频的低成本制作，视频矩阵，养号等，成本只有seedance等1%。现在<a href="https://chilltion.com/?ref=1y5k5k">注册</a>送1500积分
+    </td>
+  </tr>
+    <tr>
+        <td width="25%" align="center" valign="middle">
+          <a href="http://t.clawpower.vip/1005">
+            <img src="static/clawpower.png" alt="ClawPower Sponsor" width="180">
+          </a>
+        </td>
+        <td width="75%" align="left" valign="middle">
+          ClawPower 是一家稳定可靠 AI 大模型中转服务商，提供 Claude、GPT、Gemini 60+ 大模型接入。无论是 OpenClaw、Hermes 智能体自动化场景，Claude Code、Codex 编程工具接入，还是公众号、小红书内容创作；都能获得稳定、顺滑、可长期使用的模型服务体验。低至官方价格的 30%，点击<a href="http://t.clawpower.vip/1005">免费领取 5 刀现金</a>体验券
+        </td>
+      </tr>
+  <tr>
+    <td width="25%" align="center" valign="middle">
+      <img src="static/wechat.png" alt="Sponsor Contact" width="150">
+    </td>
+    <td width="75%" align="left" valign="middle">
+      <strong>成为赞助商</strong><br>
+      如果您有意赞助本项目，请扫描左侧微信二维码（添加时请注明来意：<strong>赞助</strong>）。
+    </td>
+  </tr>
+</table>
+
+---
+
+
+## 目录
+
+- [💡 功能特性](#功能特性)
+- [💾 安装指南](#安装指南)
+- [🤖 AI Agent](#agent)
+- [🏁 快速开始](#快速开始)
+- [🗂️ 重构计划](#%EF%B8%8F重构计划)
+- [📣 近况说明](#近况说明)
+- [🐇 项目背景](#项目背景)
+- [📃 详细文档](#详细文档)
+- [🐾 交流与支持](#交流与支持)
+- [🤝 贡献指南](#贡献指南)
+- [📜 许可证](#许可证)
+- [⭐ Star History](#star-history)
+
+## 💡功能特性
+
+| 平台 | 登录/账号准备 | 视频上传 | 图文上传 | 定时发布 | CLI | Skill | 说明 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 抖音 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 当前主线重构最完整 |
+| Bilibili | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | 运行时自动准备 `biliup` |
+| 小红书（浏览器版） | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 浏览器自动化，CLI/Skill 已接入 |
+| 快手 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 浏览器自动化，CLI/Skill 初版已接入 |
+| 视频号 | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | 浏览器自动化，对应 `tencent_uploader` |
+| 百家号 | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | 浏览器自动化 |
+| 支付宝生活号 | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | 浏览器自动化，支持生活号视频 |
+| 微博 | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | 浏览器自动化，标题最多 30 字 |
+| 虎扑 | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | 浏览器自动化，标题 4–40 字 |
+| TikTok | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | 当前示例走 Chrome 版实现 |
+| YouTube | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | 浏览器自动化（Studio），支持加入播放列表/可见性 |
+
+### AI这么强，为什么还需要这个项目
+在你使用AI的能力，browser agent等等，每次都让 agent 重新解析网页、截图理解, 临场判断
+该项目经过大量验证，上传这种 高频，重复，无聊的工作交给脚本和程序去执行
+
+
+## 💾安装指南
+
+### 自己上手使用
+如果你只是普通用户，不准备借助 agent 客户端，直接看
+
+安装、更新、环境准备已经统一收敛到文档：
+
+- [安装说明](./docs/install.md)
+- [更新说明](./docs/update.md)
+
+
+### AGENT 
 
 ```
-autoLogin/
-├── main.py                      # CLI 统一入口（平台登录分发）
-├── config.py                    # 全局配置（路径 / Xvfb / 常量）
-├── utils.py                     # 通用工具（日志脱敏 / 二维码 / cookie 处理）
-│
-├── core/                        # 核心层（平台无关基础）
-│   ├── stealth.py               # ★ 浏览器匿名性核心（70+ 检测点，唯一优化点）
-│   └── human_behavior.py        # ★ 真人行为模块（随机延迟/逐字输入，降风控）
-│
-├── platforms/                   # 平台层（业务逻辑）
-│   ├── xiaohongshu/
-│   │   ├── login.py             # 登录（状态机 + 二次认证）
-│   │   ├── publish.py           # 合规发布 v2
-│   │   ├── comment.py           # 合规评论 v1（多 selector 兜底）
-│   │   ├── feed.py              # 推荐流抓取
-│   │   ├── cards.py             # 卡片生成（字号规范 + qiaomu 三风格）
-│   │   ├── sign.py              # x-s/x-t 签名（API 直发，execjs + crypto-js）
-│   │   ├── xhs_selectors.py     # selector 候选库（改版集中更新）
-│   │   └── static/              # 签名 JS（xhs_creator/main/rap）
-│   ├── douyin/
-│   │   ├── login.py             # 登录模块
-│   │   └── publish.py           # 图文发布
-│   └── goofish/
-│       ├── login.py             # 登录模块
-│       ├── publish.py           # 发布模块
-│       └── daily_publish.py     # 每日自动发布
-│
-├── scripts/                     # 独立脚本
-│   ├── fetch_github_ai_projects.py  # GitHub 高 star AI 项目抓取
-│   └── patch_goofish_cli.py         # goofish-cli 硬编码指纹补丁
-│
-├── tools/                       # 二维码/发码工具
-│   ├── qr_tool.py / qr_to_hd.py / send_qr_now.py / send_latest.py
-├── assets/                      # 输出（截图/二维码）
-├── cookies/                     # cookie 保存目录（gitignore）
-├── qr/                          # 二维码运行时目录（gitignore）
-├── profile/                     # 持久化 Profile（gitignore）
-└── requirements.txt             # 固定版本依赖
+AI的发展毋庸置疑，希望你遇到这种安装和使用，不要再怯场，而是交给各种AI Agent来协助你
 ```
 
-## 架构设计原则
+如果你准备把这个仓库直接交给 `OpenClaw`、`Codex`、`Claude Code` 来安装和使用
 
-1. **分层解耦** —— `core/`（匿名性 + 真人行为，平台无关）与 `platforms/`（各平台业务）分离，
-   匿名性不足只改 `core/stealth.py`，行为风控只改 `core/human_behavior.py`。
-2. **平台独立演进** —— 各平台是独立包，互不影响、各自维护。
-3. **合规优先** —— 发布/评论带 AI 标识、原创声明、低频控制、内容过滤、人工确认。
-4. **统一入口** —— `main.py` 按平台分发；各脚本也可直接运行。
-5. **跨平台** —— Windows / macOS / Linux 自动适配（Chrome 路径 / DISPLAY / 伪装策略）。
+先把仓库给 agent，再把这份启动提示词一起发给它：
 
-## 匿名性方案（core/stealth）
+- [Agent Bootstrap Prompt](./docs/agent-bootstrap.md)
 
-- **注入方式**：`goto(wait_until='commit')` 后立即 `page.evaluate(STEALTH)`，
-  赶在页面脚本执行前完成伪装（绕过 patchright add_init_script bug + 抖音 CSP）。
-- **检测覆盖**：webdriver / CDP 残留 / Chrome 对象 / Navigator / UA-CH / WebGL /
-  Canvas / Audio / 权限 / 媒体 / Battery / 网络 / Performance 等 70+ 检测点。
+这份提示词会引导 agent：
 
-## 签名方案（platforms/xiaohongshu/sign）
+- 优先按当前主线安装项目
+- 优先使用 `uv`、`sau` CLI 和 `skills/`
+- 先验证 `bilibili`、`douyin`、`kuaishou`、`xiaohongshu` 四个平台入口是否可用
 
-合并自 creatorhub 的小红书 x-s/x-t 签名（execjs + Node + crypto-js），可 API 直发
-（评论/发布/搜索），不依赖浏览器前端，改版时更新 `static/*.js` 即可。
 
-- `generate_xs_xs_common(a1, api, data)` → x-s / x-t / x-s-common（创作者签名）
-- `generate_xsc_main(a1, api, data, method)` → 网页主签名（www/edith 带参 GET）
-- `cos_signature(...)` → 上传文件 COS 签名（HMAC-SHA1，纯 Python）
+### 补充说明：
 
-依赖：`pip install PyExecJS` + `npm install crypto-js`（项目根目录 node_modules）。
+- CLI 使用请看：[CLI 使用说明](./docs/CLI.md)
+- 如果你准备在 `OpenClaw`、`Codex`、`Claude Code / cc` 里使用本项目，先看：[Agent Bootstrap Prompt](./docs/agent-bootstrap.md)
+- agent / skill 请看：[Douyin Upload Skill](./skills/douyin-upload/SKILL.md)
+- agent / skill 请看：[Kuaishou Upload Skill](./skills/kuaishou-upload/SKILL.md)
+- agent / skill 请看：[Xiaohongshu Upload Skill](./skills/xiaohongshu-upload/SKILL.md)
+- agent / skill 请看：[Bilibili Upload Skill](./skills/bilibili-upload/SKILL.md)
+- 历史 Web 说明请看：[历史 Web 版本说明](./docs/legacy-web.md)
+- 其他单平台 skill 与整合型 skill 仍在开发中
+- `requirements.txt` 目前主要用于历史兼容路径，普通用户不需要优先使用它
 
-## 卡片设计（platforms/xiaohongshu/cards）
 
-整合 xiaohongshu-card-design skill 规范 + qiaomu 三风格，字体自包含（`assets/fonts/`，不依赖 /tmp）。
+## 📣近况说明
 
-**字号铁律**（小红书手机端，小字根本看不清，skill 硬规则）：
+`2026.03.24`
 
-| 层级 | 字号 |
-|:---|:---|
-| 主标题 | 128px |
-| 副标题 | 64px |
-| 卡片标题 | 52px |
-| 正文 | 38px |
-| 标签 | 42px |
+最近我的重心一直都在创业上，而且手里还有一些项目没完全跑通，所以这个仓库前面有很长一段时间，我确实没有办法投入特别多精力去持续维护。
 
-Golden rule：**If in doubt, make it bigger.** 小字 = 被划走的笔记。
+这个项目不知不觉已经 `9k+ star` 了，社群里也已经有 `2000+` 小伙伴了。看到它真的在持续帮到大家，我心里还是挺开心的，也是真的很感谢大家一直以来的支持、反馈。
 
-**四风格**（随机选，无需确认）：
-- `classic` — 米白杂志标准（#f5f3ed / #1a1a1a / #8b5e3c）
-- `magazine` — 精致编辑（交替行背景 + 圆角）
-- `artistic` — 实验暗色（#0A0615 / #C77DFF 紫 accent）
-- `morandi` — 莫兰迪柔和（#f5ece6 / #3d3a38 / #b08d8d，圆角卡片）
+所以我想，决定先停一下，抽一段时间出来，把这个项目好好重构和优化一轮。
 
-另有 **AI 生成类风格**（baoyu-infographic 21 布局×21 风格 + baoyu-comic 6 风格×7 色调），
-依赖 `image_generate` 工具（当前环境不可用），定义见 `references/card-styles.md`。
+接下来这段时间，这个仓库应该会进入一个相对密集更新的阶段。我现在最想先做的事情主要有这几件：
 
-用法：
-```python
-from platforms.xiaohongshu.cards import generate_cards
-paths = generate_cards(cards=[...], style="random", out_dir="/root/xhs_hermes_cards")
-```
+1. 使用更隐蔽、更稳定的自动化方案，尽量降低平台检测风险
+2. 补齐一些常用平台的图文能力，并逐步完成 CLI 化、Skill 化
+3. 陆续测试并上架到更多 skill 平台，让大家的龙虾、螃蟹、毛毛虫都能打通 AI 自媒体的最后一道关
 
-## 两层登录模型（小红书）
+所以如果你之前觉得这个项目更新有点慢，哈哈哈，后面大概率会快很多。也欢迎大家继续关注，最近应该会是一段持续修、持续更、持续重构的阶段。
 
-小红书有**两层独立登录**，发布/评论需要两层都有效：
+## 🗂️重构计划
 
-| 层 | 域名 | 登录方式 | 用途 |
-|:---|:-----|:-----|:-----|
-| ① 网页版 | www.xiaohongshu.com | 扫码 | 浏览/看内容（web_session）|
-| ② 创作者中心 | creator.xiaohongshu.com | 短信/扫码 | 发布/评论（customerClientId）|
+项目正在进行一轮整体重构，当前重构重点是：
 
-- 网页版登录：`python main.py xiaohongshu`
-- 创作者中心登录：访问 creator.xiaohongshu.com/login，点右上角二维码图标切换扫码
-- 发布/评论需同时具备 `web_session` + `customerClientId`
+- 各平台 uploader 的结构收敛
+- CLI 统一接入
+- 面向 OpenClaw、Codex、 Claude Code 等工具的 skill 化
+- 更换为 `patchright` 驱动，提升兼容性与隐蔽性
+- 主线优先围绕无头模式推进
 
-## 安装
+“无头模式（headless）”，指的是浏览器在后台运行，不弹出可见窗口，但自动化流程仍然会照常执行。这样更适合 CLI、服务端、自动任务和 agent 场景。
+
+Web 端相关代码仍然保留，但已经不是当前主线，不保证可直接运行，也不保证与当前 uploader/CLI 完全同步。
+
+
+## 🏁快速开始
+
+### 方式 1：使用 CLI
+
+当前抖音、快手、小红书、Bilibili、视频号、百家号、支付宝生活号、微博和虎扑已经接入 CLI：
 
 ```bash
-pip install -r requirements.txt
-# patchright 浏览器（真 Chrome 走系统，无需额外安装）
+sau douyin login --account <account_name>
+sau douyin check --account <account_name>
+sau douyin upload-video --account <account_name> --file videos/demo.mp4 --title "示例标题" --desc "示例简介"
+sau douyin upload-note --account <account_name> --images videos/1.png videos/2.png --title "图文标题" --note "图文正文"
+
+sau kuaishou login --account <account_name>
+sau kuaishou check --account <account_name>
+sau kuaishou upload-video --account <account_name> --file videos/demo.mp4 --title "示例标题" --desc "示例简介"
+sau kuaishou upload-note --account <account_name> --images videos/1.png videos/2.png videos/3.png --title "图文标题" --note "图文正文"
+
+sau xiaohongshu login --account <account_name>
+sau xiaohongshu check --account <account_name>
+sau xiaohongshu upload-video --account <account_name> --file videos/demo.mp4 --title "示例标题" --desc "示例简介"
+sau xiaohongshu upload-note --account <account_name> --images videos/1.png videos/2.png videos/3.png --title "图文标题" --note "图文正文"
+
+sau bilibili login --account <account_name>
+sau bilibili check --account <account_name>
+sau bilibili upload-video --account <account_name> --file videos/demo.mp4 --title "示例标题" --desc "示例简介" --tid 249
+
+sau tencent login --account <account_name>
+sau tencent check --account <account_name>
+sau tencent upload-video --account <account_name> --file videos/demo.mp4 --title "示例标题" --desc "示例简介" --tags tag1,tag2
+
+sau baijiahao login --account <account_name>
+sau baijiahao check --account <account_name>
+sau baijiahao upload-video --account <account_name> --file videos/demo.mp4 --title "示例标题" --desc "示例简介" --tags tag1,tag2
+
+sau alipay login --account <account_name>
+sau alipay check --account <account_name>
+sau alipay upload-video --account <account_name> --file videos/demo.mp4 --title "示例标题" --desc "示例简介" --tags tag1,tag2
+
+sau weibo login --account <account_name>
+sau weibo check --account <account_name>
+sau weibo upload-video --account <account_name> --file videos/demo.mp4 --title "示例标题" --desc "示例简介" --tags tag1,tag2
+
+sau hupu login --account <account_name>
+sau hupu check --account <account_name>
+sau hupu upload-video --account <account_name> --file videos/demo.mp4 --title "示例标题" --desc "示例简介" --tags tag1,tag2
+
+sau youtube login --account <account_name>
+sau youtube check --account <account_name>
+sau youtube upload-video --account <account_name> --file videos/demo.mp4 --title "示例标题" --desc "示例简介" --tags tag1,tag2 --playlist "我的系列" --visibility public
 ```
 
-## 注意事项
+> YouTube 说明：登录是交互式的（Google 账号，浏览器里完成，无二维码）。这里走浏览器自动化而不是官方 API，
+> 是因为**未通过 Google 合规审核的 API 项目上传的视频会被强制锁为私享、无法改公开**，对个人/单频道不实用；
+> 浏览器自动化没有此限制，可直接发布公开视频，也与本项目其它平台的 cookie 方案一致。
+> `--playlist` 适合连载/系列追更；`--visibility` 可选 `public`/`unlisted`/`private`。
+> 上传会**等进度到 100% 再点发布**（浏览器上传靠窗口开着传，传一半就发布会被掐断卡在中途）。
+> youtube.com 被墙的地区：在 `conf.py` 设 `YT_PROXY = "http://127.0.0.1:7890"`（chromium 不吃系统代理，需显式指定）。
 
-- 每个平台/账号使用独立且长期稳定的 Profile，不要每次随机。
-- 版本固定（`requirements.txt` 用 `==`），人工控制升级。
-- 闲鱼发布依赖 goofish-cli（`scripts/patch_goofish_cli.py` 修复其硬编码指纹）。
-- 频繁脚本访问会触发平台风控（web_session 失效、评论 -104 等），需冷却期恢复。
+补充说明：
+
+- `creator` 之类的名字只是示例值，真正含义是 `account_name`
+- 一个 `account_name` 对应一个账号文件，可以准备多个账号，也可以按账号名并发执行任务
+- 抖音视频发布若触发短信二次验证，程序会优先读取项目根目录下的 `verify_code.txt`；如果你是在本地交互式终端手动运行 CLI，也可以直接按终端提示输入验证码
+- 浏览器平台统一约定：
+- 视频使用 `title + desc + tags`
+- 图文使用 `title + note + tags`
+- Bilibili CLI 不要求用户手动安装 `biliup`
+- 首次运行相关命令时，程序会自动下载 `biliup`
+- 后续运行会自动检查上游 release 并更新
+- Bilibili 登录建议由用户自己在本地真实终端里执行；如果终端二维码显示不完整，可以直接打开当前目录下的 `qrcode.png` 扫码
+
+### 方式 2：使用 examples
+
+`examples/` 目录里同时存在两类脚本：
+
+- 当前主线 CLI 包装示例
+- 历史直连 uploader 示例
+
+对抖音、快手、小红书、Bilibili 来说，当前主线优先使用上面的 `sau ...` CLI。
+下面这些脚本主要是历史直连 uploader 示例或调试入口：
+
+- `examples/upload_to_douyin.py`
+- `examples/upload_video_to_bilibili.py`
+- `examples/upload_to_kuaishou.py`
+- `examples/upload_video_to_tencent.py`
+- `examples/upload_video_to_baijiahao.py`
+- `examples/get_alipay_cookie.py`
+- `examples/test_alipay_upload.py`
+- `examples/upload_video_to_tiktok.py`
+- `examples/upload_video_to_xiaohongshu.py`
+
+## 🐇项目背景
+
+该项目最初是我个人用于自动化管理社交媒体视频发布的工具。我的主要发布策略是提前一天设置定时发布，因此项目中很多定时发布相关的逻辑是基于“第二天”的时间进行计算的。
+
+如果您需要立即发布或其他定制化的发布策略，欢迎研究源码或在社区提问。
+
+## 📃详细文档
+
+已落后，目前在快速重构该项目，当下，你需要做的是把这个仓库，发给你的AI agent：qwen code，codex cc，openclaw等等，让他们帮你安装和使用
+
+更详细的文档和说明，请查看：[social-auto-upload 官方文档](https://sap-doc.nasdaddy.com/)
+
+## 🐾交流与支持
+
+[☕ Donate as u like](https://www.buymeacoffee.com/hysn2001m) - 如果您觉得这个项目对您有帮助，可以考虑赞助。
+
+如果您也是独立开发者、技术爱好者，对 #技术变现 #AI创业 #跨境电商 #自动化工具 #视频创作 等话题感兴趣，欢迎加入社群交流。
+
+### Creator
+
+<table>
+    <td align="center">
+        <a href="https://sap-doc.nasdaddy.com/">
+            <img src="media/mp.jpg" width="200px" alt="NasDaddy公众号"/>
+            <br />
+            <sub><b>微信公众号</b></sub>
+        </a>
+        <br />
+        <a href="https://github.com/dreammis/social-auto-upload/commits?author=dreammis" title="Code">💻</a>
+        <br />
+        关注公众号，后台回复 `上传` 获取加群方式
+    </td>
+    <td align="center">
+        <a href="https://sap-doc.nasdaddy.com/">
+            <img src="media/QR.png" width="200px" alt="赞赏码/入群引导"/>
+            <br />
+            <sub><b>交流群 (通过公众号获取)</b></sub>
+        </a>
+        <br />
+        <a href="https://sap-doc.nasdaddy.com/" title="Documentation">📖</a>
+        <br />
+        如果您觉得项目有用，可以考虑打赏支持一下
+    </td>
+</table>
+
+
+
+
+## 🤝贡献指南
+
+欢迎各种形式的贡献，包括但不限于：
+
+-   提交 Bug报告 和 Feature请求。
+-   改进代码、文档。
+-   分享使用经验和教程。
+
+如果您希望贡献代码，请遵循以下步骤：
+
+1.  Fork 本仓库。
+2.  创建一个新的分支 (`git checkout -b feature/YourFeature` 或 `bugfix/YourBugfix`)。
+3.  提交您的更改 (`git commit -m 'Add some feature'`)。
+4.  Push到您的分支 (`git push origin feature/YourFeature`)。
+5.  创建一个 Pull Request。
+
+提交代码或文档前，请确认您有权提交相关内容，并同意这些贡献按照本项目的 MIT License 发布。提交第三方代码时，请同时说明来源及其适用的许可证。
+
+## 主要贡献者
+
+<a href="https://github.com/dreammis/social-auto-upload/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=dreammis/social-auto-upload" />
+</a>
+
+
+## 🙏致谢
+
+本项目的 Bilibili 上传能力基于开源项目 `biliup` 的能力进行接入与封装。
+感谢 `biliup` 项目及其贡献者提供的基础能力：
+
+- https://github.com/biliup/biliup
+
+本项目依赖的第三方组件和运行时工具仍受其各自许可证约束。下游发行或集成本项目时，请同时检查并保留相关第三方组件要求的版权、许可证和 NOTICE 声明。
+
+## 📜许可证
+
+本项目采用 [MIT License](LICENSE) 开源许可证。除第三方组件外，本项目代码可以在遵守该许可证条款的前提下用于商业软件，包括闭源软件。
+
+## ⭐Star-History
+
+> 如果这个项目对您有帮助，请给一个 ⭐ Star 以表示支持！
+
+
+
+
+[![Star History Chart](https://star-history.dera.page/svg?repos=dreammis/social-auto-upload&type=Date)](https://star-history.dera.page/#dreammis/social-auto-upload&Date)
