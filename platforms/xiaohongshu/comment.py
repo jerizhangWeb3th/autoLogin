@@ -31,7 +31,7 @@ from patchright.async_api import async_playwright  # noqa: E402
 from core.stealth import MAC_UA, STEALTH_SCRIPT, LAUNCH_ARGS  # noqa: E402
 
 from core import human_behavior as hb  # noqa: E402
-from platforms.xiaohongshu.selectors import find_visible  # noqa: E402
+from platforms.xiaohongshu.xhs_selectors import find_visible  # noqa: E402
 
 sys.path.insert(0, "/root/.hermes/scripts")
 try:

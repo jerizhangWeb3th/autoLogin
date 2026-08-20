@@ -36,8 +36,9 @@ autoLogin/
 │   │   ├── publish.py           # 合规发布 v2
 │   │   ├── comment.py           # 合规评论 v1（多 selector 兜底）
 │   │   ├── feed.py              # 推荐流抓取
+│   │   ├── cards.py             # 卡片生成（字号规范 + qiaomu 三风格）
 │   │   ├── sign.py              # x-s/x-t 签名（API 直发，execjs + crypto-js）
-│   │   ├── selectors.py         # selector 候选库（改版集中更新）
+│   │   ├── xhs_selectors.py     # selector 候选库（改版集中更新）
 │   │   └── static/              # 签名 JS（xhs_creator/main/rap）
 │   ├── douyin/
 │   │   ├── login.py             # 登录模块
@@ -86,6 +87,33 @@ autoLogin/
 - `cos_signature(...)` → 上传文件 COS 签名（HMAC-SHA1，纯 Python）
 
 依赖：`pip install PyExecJS` + `npm install crypto-js`（项目根目录 node_modules）。
+
+## 卡片设计（platforms/xiaohongshu/cards）
+
+整合 xiaohongshu-card-design skill 规范 + qiaomu 三风格，字体自包含（`assets/fonts/`，不依赖 /tmp）。
+
+**字号铁律**（小红书手机端，小字根本看不清，skill 硬规则）：
+
+| 层级 | 字号 |
+|:---|:---|
+| 主标题 | 96px |
+| 副标题 | 52px |
+| 卡片标题 | 42px |
+| 正文 | 28px |
+| 标签 | 36px |
+
+Golden rule：**If in doubt, make it bigger.** 小字 = 被划走的笔记。
+
+**三风格**（随机选，无需确认）：
+- `classic` — 米白杂志标准（#f5f3ed / #1a1a1a / #8b5e3c）
+- `magazine` — 精致编辑（交替行背景 + 圆角）
+- `artistic` — 实验暗色（#0A0615 / #C77DFF 紫 accent）
+
+用法：
+```python
+from platforms.xiaohongshu.cards import generate_cards
+paths = generate_cards(cards=[...], style="random", out_dir="/root/xhs_hermes_cards")
+```
 
 ## 两层登录模型（小红书）
 
