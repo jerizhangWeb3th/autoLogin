@@ -38,7 +38,7 @@ _sau = str(Path.home() / ".local/share/uv/tools/social-auto-upload/lib/python3.1
 if _sau not in sys.path:
     sys.path.insert(0, _sau)
 
-from core.stealth import find_chrome, ensure_display  # noqa: E402
+from core.stealth import find_chrome, ensure_display, ensure_fonts  # noqa: E402
 
 QR_DIR = BASE_DIR / "qr"
 COOKIE_DIR = BASE_DIR / "cookies"
@@ -153,6 +153,7 @@ async def main():
     print("=" * 56)
 
     ensure_display()
+    ensure_fonts()
     chrome = find_chrome()
     print(f"Chrome: {chrome}", flush=True)
     print(f"UA: {USER_AGENT}", flush=True)

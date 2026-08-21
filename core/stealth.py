@@ -723,3 +723,35 @@ def verify_stealth(page) -> dict:
         out.cdpVars = cdp.length;
         return out;
     }""")
+
+
+def ensure_fonts() -> None:
+    """把项目自包含中文字体安装到系统（字体指纹一致性）。
+
+    闲鱼/小红书风控检测字体指纹：Linux 服务器缺中文字体（仅文泉驿正黑），
+    与真实中国用户（宋体/楷体/黑体等）不符。把 assets/fonts 的字体装到
+    ~/.fonts/ 并刷新 fontconfig，让 Chrome 报告更真实的中文字体列表。
+    """
+    if not IS_LINUX:
+        return
+    from pathlib import Path
+    import shutil as _shutil
+    import subprocess as _sp
+    fonts_src = Path(__file__).resolve().parent.parent / "assets" / "fonts"
+    if not fonts_src.exists():
+        return
+    target_dir = Path.home() / ".fonts"
+    target_dir.mkdir(exist_ok=True)
+    installed = 0
+    for ttf in sorted(fonts_src.glob("*.ttf")):
+        dst = target_dir / ttf.name
+        if dst.exists():
+            continue
+        try:
+            _shutil.copy2(ttf, dst)
+            installed += 1
+        except Exception as e:
+            print(f"⚠️ 字体安装失败 {ttf.name}: {e}")
+    if installed:
+        _sp.run(["fc-cache", "-f"], capture_output=True)
+        print(f"✅ 已安装 {installed} 个中文字体到 {target_dir}")
