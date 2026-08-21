@@ -138,7 +138,7 @@ def generate_cards(cards: list, style: str = "random", out_dir: str = "/root/xhs
 
     paths = []
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(headless=True, channel="chrome")
         for i, card in enumerate(cards):
             html = build_html(card, i, chosen_style)
             hp = out_path / f"card_{i}.html"
