@@ -24,9 +24,9 @@
 | 支付宝生活号 | ✅ | ✅ | ❌ | ❌ | ✅ | 浏览器自动化 |
 | 微博 | ✅ | ✅ | ❌ | ❌ | ✅ | 标题最多 30 字 |
 | 虎扑 | ✅ | ✅ | ❌ | ❌ | ✅ | 标题 4–40 字 |
-| 闲鱼 | ✅ | ✅ | ❌ | ❌ | — | ★ autoLogin 独有（goofish_uploader） |
-| TikTok | ✅ | ✅ | ❌ | ✅ | ❌ | Chrome 版实现 |
-| YouTube | ✅ | ✅ | ❌ | ❌ | ✅ | 交互式登录（Studio） |
+| 闲鱼 | ✅ | ✅ | ✅ | ❌ | — | ★ autoLogin 独有（goofish_uploader） |
+| TikTok | ✅ | ✅ | ✅ | ✅ | ❌ | Chrome 版实现 |
+| YouTube | ✅ | ✅ | ✅ | ❌ | ✅ | 交互式登录（Studio） |
 
 ## 项目结构
 
