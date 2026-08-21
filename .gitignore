@@ -195,3 +195,6 @@ qr/
 profile/
 login_state.txt
 qr_latest.txt
+
+# 小红书运营知识库（运行时积累数据，本地保存）
+knowledge-base/
